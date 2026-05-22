@@ -1262,7 +1262,7 @@ class AIAgent:
             return False
         if "ollama" in self._base_url_lower or ":11434" in self._base_url_lower:
             return True
-        return bool(self.base_url and is_local_endpoint(self.base_url))
+        return False
 
     def _should_treat_stop_as_truncated(
         self,
