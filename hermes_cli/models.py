@@ -3691,12 +3691,16 @@ def validate_requested_model(
             if suggestions:
                 suggestion_text = "\n  Similar models: " + ", ".join(f"`{s}`" for s in suggestions)
 
+        # Accept anyway — the user may have access to models not shown in
+        # the public listing (e.g. Z.AI Pro/Max plans can use glm-5 on
+        # coding endpoints even though it's not in /models).  Warn but allow.
         return {
-            "accepted": False,
-            "persist": False,
+            "accepted": True,
+            "persist": True,
             "recognized": False,
             "message": (
-                f"Model `{requested}` was not found in this provider's model listing."
+                f"Note: `{requested}` was not found in this provider's /v1/models listing."
+                f"  The model may still work if your plan or endpoint supports it."
                 f"{suggestion_text}"
             ),
         }
