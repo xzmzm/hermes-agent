@@ -54,15 +54,26 @@ def generate_title(
     ]
 
     try:
-        response = call_llm(
-            task="title_generation",
-            messages=messages,
-            max_tokens=500,
-            temperature=0.3,
-            timeout=timeout,
-            main_runtime=main_runtime,
-        )
-        title = (response.choices[0].message.content or "").strip()
+        max_t = 500
+        title = ""
+        for _attempt in range(2):
+            response = call_llm(
+                task="title_generation",
+                messages=messages,
+                max_tokens=max_t,
+                temperature=0.3,
+                timeout=timeout,
+                main_runtime=main_runtime,
+            )
+            choice = response.choices[0]
+            title = (choice.message.content or "").strip()
+            finish = getattr(choice, "finish_reason", None)
+            # If reasoning tokens consumed the entire budget with no content,
+            # retry with doubled max_tokens so the model has room to answer.
+            if title or finish != "length":
+                break
+            max_t *= 2
+
         # Clean up: remove quotes, trailing punctuation, prefixes like "Title: "
         title = title.strip('"\'')
         if title.lower().startswith("title:"):
