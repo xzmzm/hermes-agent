@@ -524,17 +524,40 @@ def _run_review_in_thread(
             messages_snapshot,
         )
 
-        if actions:
-            summary = " · ".join(dict.fromkeys(actions))
-            agent._safe_print(
-                f"  💾 Self-improvement review: {summary}"
-            )
+        # Also capture the review agent's final assistant text response
+        review_text = ""
+        for msg in reversed(review_messages):
+            if not isinstance(msg, dict) or msg.get("role") != "assistant":
+                continue
+            content = msg.get("content", "")
+            if isinstance(content, str) and content.strip():
+                review_text = content.strip()
+                break
+            elif isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text = block.get("text", "").strip()
+                        if text:
+                            review_text = text
+                            break
+                if review_text:
+                    break
+
+        if actions or review_text:
+            parts = []
+            if actions:
+                summary = " · ".join(dict.fromkeys(actions))
+                agent._safe_print(
+                    f"  💾 Self-improvement review: {summary}"
+                )
+                parts.append(f"💾 Self-improvement review: {summary}")
+            if review_text:
+                parts.append(review_text)
+            msg_text = "\n\n".join(parts)
             _bg_cb = agent.background_review_callback
             if _bg_cb:
                 try:
-                    _bg_cb(
-                        f"💾 Self-improvement review: {summary}"
-                    )
+                    _bg_cb(msg_text)
                 except Exception:
                     pass
 
