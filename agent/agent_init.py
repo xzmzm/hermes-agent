@@ -19,6 +19,7 @@ preserved.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -775,6 +776,20 @@ def init_agent(
                         client_kwargs["default_headers"] = dict(_ph.default_headers)
                 except Exception:
                     pass
+                # Final fallback: custom headers from env or RooCode defaults.
+                if "default_headers" not in client_kwargs:
+                    _raw = os.getenv("HERMES_DEFAULT_HEADERS")
+                    if _raw:
+                        try:
+                            client_kwargs["default_headers"] = json.loads(_raw)
+                        except json.JSONDecodeError:
+                            logger.warning("HERMES_DEFAULT_HEADERS is not valid JSON, skipping")
+                    else:
+                        client_kwargs["default_headers"] = {
+                            "http-referer": "https://github.com/RooVetGit/Roo-Cline",
+                            "User-Agent": "RooCode/3.53.0",
+                            "x-title": "Roo Code",
+                        }
         else:
             # No explicit creds — use the centralized provider router
             from agent.auxiliary_client import resolve_provider_client
