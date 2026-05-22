@@ -825,7 +825,6 @@ def switch_model(
 
         if (
             target_provider == current_provider
-            and not is_custom
             and not resolved_alias
             and not resolved_in_current_catalog
         ):
