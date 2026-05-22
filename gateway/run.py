@@ -13242,7 +13242,7 @@ class GatewayRunner:
             else:
                 return t("gateway.title.current_no_title", session_id=session_id)
 
-    async def _handle_resume_command(self, event: MessageEvent) -> str:
+    async def _handle_resume_command(self, event: MessageEvent) -> Optional[str]:
         """Handle /resume command — list or switch to a previous session."""
         if not self._session_db:
             from hermes_state import format_session_db_unavailable
@@ -13280,7 +13280,26 @@ class GatewayRunner:
                     preview_part = t("gateway.resume.list_preview_suffix", preview=preview) if preview else ""
                     lines.append(t("gateway.resume.list_item_numbered", index=idx, title=title, preview_part=preview_part))
                 lines.append(t("gateway.resume.list_footer_numbered"))
-                return "\n".join(lines)
+                listing_text = "\n".join(lines)
+
+                # On Telegram, try to send with inline keyboard buttons
+                if source.platform == Platform.TELEGRAM:
+                    try:
+                        adapter = self.adapters.get(Platform.TELEGRAM)
+                        if adapter and hasattr(adapter, "send_resume_picker"):
+                            metadata = {"thread_id": source.thread_id} if getattr(source, "thread_id", None) else None
+                            await adapter.send_resume_picker(
+                                chat_id=source.chat_id,
+                                sessions=titled[:10],
+                                listing_text=listing_text,
+                                metadata=metadata,
+                            )
+                            return None  # Already sent, don't double-send
+                    except Exception as e:
+                        logger.debug("Failed to send resume picker with keyboard: %s", e)
+                        # Fall through to text-only response
+
+                return listing_text
             except Exception as e:
                 logger.debug("Failed to list titled sessions: %s", e)
                 return t("gateway.resume.list_failed", error=e)
