@@ -107,6 +107,21 @@ from utils import base_url_host_matches, base_url_hostname, normalize_proxy_env_
 logger = logging.getLogger(__name__)
 
 
+def _get_hermes_default_headers() -> dict:
+    """Read HERMES_DEFAULT_HEADERS from env, or return RooCode defaults."""
+    _raw = os.getenv("HERMES_DEFAULT_HEADERS")
+    if _raw:
+        try:
+            return json.loads(_raw)
+        except json.JSONDecodeError:
+            logger.warning("HERMES_DEFAULT_HEADERS is not valid JSON, skipping")
+    return {
+        "User-Agent": "RooCode/3.53.0",
+        "http-referer": "https://github.com/RooVetGit/Roo-Cline",
+        "x-title": "Roo Code",
+    }
+
+
 def _safe_isinstance(obj: Any, maybe_type: Any) -> bool:
     """Return False instead of raising when a patched symbol is not a type."""
     try:
@@ -1455,6 +1470,8 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
                         extra["default_headers"] = dict(_ph_aux.default_headers)
                 except Exception:
                     pass
+                if "default_headers" not in extra:
+                    extra["default_headers"] = _get_hermes_default_headers()
             _client = OpenAI(api_key=api_key, base_url=base_url, **extra)
             _client = _maybe_wrap_anthropic(_client, model, api_key, raw_base_url)
             return _client, model
@@ -1492,6 +1509,8 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
                     extra["default_headers"] = dict(_ph_aux2.default_headers)
             except Exception:
                 pass
+            if "default_headers" not in extra:
+                extra["default_headers"] = _get_hermes_default_headers()
         _client = OpenAI(api_key=api_key, base_url=base_url, **extra)
         _client = _maybe_wrap_anthropic(_client, model, api_key, raw_base_url)
         return _client, model
@@ -1841,6 +1860,7 @@ def _try_custom_endpoint() -> Tuple[Optional[Any], Optional[str]]:
     logger.debug("Auxiliary client: custom endpoint (%s, api_mode=%s)", model, custom_mode or "chat_completions")
     _clean_base, _dq = _extract_url_query_params(custom_base)
     _extra = {"default_query": _dq} if _dq else {}
+    _extra["default_headers"] = _get_hermes_default_headers()
     if custom_mode == "codex_responses":
         real_client = OpenAI(api_key=custom_key, base_url=_clean_base, **_extra)
         return CodexAuxiliaryClient(real_client, model), model
@@ -3170,6 +3190,8 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
                     async_kwargs["default_headers"] = dict(_ph_async.default_headers)
         except Exception:
             pass
+        if "default_headers" not in async_kwargs:
+            async_kwargs["default_headers"] = _get_hermes_default_headers()
     return AsyncOpenAI(**async_kwargs), model
 
 
@@ -3703,6 +3725,8 @@ def resolve_provider_client(
                     headers.update(_ph_main.default_headers)
             except Exception:
                 pass
+            if not headers:
+                headers = _get_hermes_default_headers()
         client = OpenAI(api_key=api_key, base_url=base_url,
                         **({"default_headers": headers} if headers else {}))
 
@@ -4229,7 +4253,8 @@ def _refresh_nous_auxiliary_client(
         return None, model
 
     fresh_key, fresh_base_url = runtime
-    sync_client = OpenAI(api_key=fresh_key, base_url=fresh_base_url)
+    sync_client = OpenAI(api_key=fresh_key, base_url=fresh_base_url,
+                         default_headers=_get_hermes_default_headers())
     final_model = model
 
     current_loop = None
