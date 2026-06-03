@@ -29,7 +29,7 @@ from hermes_cli.auth import (
     resolve_external_process_provider_credentials,
     has_usable_secret,
 )
-from hermes_cli.config import get_compatible_custom_providers, load_config
+from hermes_cli.config import get_compatible_custom_providers, get_env_value, load_config
 from hermes_constants import OPENROUTER_BASE_URL
 from utils import base_url_host_matches, base_url_hostname, env_int
 
@@ -308,7 +308,8 @@ def _resolve_runtime_from_pool_entry(
     api_mode = "chat_completions"
     if provider == "openai-codex":
         api_mode = "codex_responses"
-        base_url = base_url or DEFAULT_CODEX_BASE_URL
+        env_base_url = str(get_env_value("HERMES_CODEX_BASE_URL") or "").strip().rstrip("/")
+        base_url = env_base_url or base_url or DEFAULT_CODEX_BASE_URL
     elif provider == "xai-oauth":
         api_mode = "codex_responses"
         base_url = base_url or DEFAULT_XAI_OAUTH_BASE_URL
