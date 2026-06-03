@@ -224,7 +224,7 @@ api_key_present= True
 5. 本机环境存在坏的 `SSL_CERT_FILE`，httpx 客户端需 `trust_env=False`，否则创建 client 时会因证书路径不存在报 `FileNotFoundError`。
 6. Xiaomi MiMo 的 console quota API 在 `/api/v1/tokenPlan/usage`，不是 SPA fallback `/tokenPlan/usage`；仅用 Token Plan API key 会返回 401，需要 web-login cookie。
 7. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。若需要重启，告知用户，由用户自行操作。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
-
+8. Z.ai 的 `reset_at` 是毫秒级时间戳（如 `1781338292982`），渲染时需转成本地可读时间；Limits 详情里的 `reset_at` / `used_percent` 也要格式化，不能直接输出原始数字。
 ---
 
 ### Fix — Gateway provider failure 包含原始错误详情
