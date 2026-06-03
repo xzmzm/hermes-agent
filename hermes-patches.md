@@ -13,7 +13,7 @@
 
 ---
 
-## Active Patches (9 commits + 1 docs on `local-patches`)
+## Active Patches (10 patch commits + 1 fix commit + docs on `local-patches`)
 
 Rebased on upstream `6a72af044` (v0.15.1, +881 commits from `1e71b7180`)。
 每个 patch 修改不同文件，零文件重叠。
@@ -151,6 +151,49 @@ Bot:  [i18n 列表头]
 
 ---
 
+### Patch #14 — pooled `openai-codex` credentials honor `HERMES_CODEX_BASE_URL`
+
+**Commit:** `92d8ba235`
+**File:** `hermes_cli/runtime_provider.py`（`_resolve_runtime_from_pool_entry()` L309-312）
+**Env:** `HERMES_CODEX_BASE_URL`
+
+#### 问题
+
+`openai-codex` 主对话在某些路径会从 credential pool entry 解析 runtime credentials。该路径之前只用 `entry.runtime_base_url` / `entry.base_url`，为空时直接 fallback 到：
+
+```text
+https://chatgpt.com/backend-api/codex
+```
+
+因此即使 `.env` 中设置：
+
+```bash
+HERMES_CODEX_BASE_URL=http://localhost:8000/v1
+```
+
+也可能被 pooled credentials 路径忽略，导致请求不走本地 aichatproxy。
+
+#### 修复
+
+在 `provider == "openai-codex"` 分支内读取 profile-aware `get_env_value("HERMES_CODEX_BASE_URL")`，并优先于 pool entry/default 使用：
+
+```diff
++        env_base_url = str(get_env_value("HERMES_CODEX_BASE_URL") or "").strip().rstrip("/")
+-        base_url = base_url or DEFAULT_CODEX_BASE_URL
++        base_url = env_base_url or base_url or DEFAULT_CODEX_BASE_URL
+```
+
+#### 验证
+
+```text
+provider= openai-codex
+api_mode= codex_responses
+base_url= http://localhost:8000/v1
+api_key_present= True
+```
+
+---
+
 ### Fix — Gateway provider failure 包含原始错误详情
 
 **Commit:** `77b70d731`
@@ -186,7 +229,7 @@ Provider 返回错误时，Telegram 回复中包含原始 error detail（而不�
 | Branch | 用途 |
 |--------|------|
 | `main` | 上游最新 `6a72af044` (v0.15.1)，不做修改 |
-| `local-patches` | 9 active + 1 docs commits，基于最新 main |
+| `local-patches` | 10 patch commits + 1 fix commit + docs，基于最新 main |
 | `local-patches-archive` | 完整旧历史（27 commits，含废弃的 pre-v0.14 commits） |
 | Tag `local-patches-pre-update-20260530` | v0.15.1 rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-update-20260523` | v0.14.x rebase 之前的 local-patches 快照 |
@@ -197,6 +240,8 @@ Provider 返回错误时，Telegram 回复中包含原始 error detail（而不�
 ## Commit history
 
 ```
+92d8ba235 patch-14: honor HERMES_CODEX_BASE_URL for pooled Codex credentials
+2f07d25a3 docs: update hermes-patches.md for 2026-05-30 v0.15.1 rebase
 dae98ff0b docs: update hermes-patches.md for 2026-05-23 rebase (new commit hashes, +2 fix commits)
 77b70d731 fix(gateway): include raw error detail in provider failure Telegram replies
 71a3aa83f patch-13: apply HERMES_DEFAULT_HEADERS to all auxiliary HTTP clients
@@ -209,4 +254,4 @@ c756e2f4d patch-4: background review send full text + tool summary
 1029b8b9d patch-1: title generation reasoning budget retry
 ```
 
-*最后更新: 2026-05-30（rebase on `6a72af044` v0.15.1, 9 patches, 6 discarded, +1 fix commit）*
+*最后更新: 2026-06-03（rebase on `6a72af044` v0.15.1, 10 patches, 6 discarded, +1 fix commit）*
