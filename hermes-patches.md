@@ -194,6 +194,36 @@ api_key_present= True
 
 ---
 
+### Patch #15 — `/quota` 通过本地 aichatproxy 查询当前模型额度
+
+**Commit:** pending
+**Files:** `hermes_cli/commands.py`, `hermes_cli/quota.py`, `cli.py`, `gateway/run.py`
+**Local service:** `http://localhost:8000/api/quota`（由 `~/prj/aichatproxy` 提供）
+
+新增 `/quota` slash command：
+
+- CLI：`/quota [model]`
+- Gateway/Telegram：`/quota [model]`
+- 默认使用当前模型；可传 model 覆盖。
+- Hermes 只负责解析当前 runtime credentials，并把 Bearer token 传给本地 aichatproxy。
+- aichatproxy 根据 route 的 `upstream_url` / model / provider 判断 quota adapter。
+
+首批支持：
+
+- Z.ai / GLM：`https://api.z.ai/api/monitor/usage/quota/limit` 或中国站 `https://open.bigmodel.cn/api/monitor/usage/quota/limit`
+- DeepSeek：`https://api.deepseek.com/user/balance`
+- Xiaomi MiMo：`https://platform.xiaomimimo.com/tokenPlan/detail`
+- OpenAI Codex OAuth：`https://chatgpt.com/backend-api/wham/usage`，并透传 `ChatGPT-Account-Id` + `User-Agent: codex-cli`
+
+**踩坑笔记：**
+
+1. Codex 不是 `/backend-api/codex/usage`；该旧路径返回 HTML 403。Hermes 现有 `agent.account_usage` 使用的是 `/backend-api/wham/usage`。
+2. Codex OAuth 必须优先使用 Hermes 当前刷新后的 Bearer token，不能只依赖 aichatproxy route 表里的静态 `api_key`。
+3. 本机环境存在坏的 `SSL_CERT_FILE`，httpx 客户端需 `trust_env=False`，否则创建 client 时会因证书路径不存在报 `FileNotFoundError`。
+4. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
+
+---
+
 ### Fix — Gateway provider failure 包含原始错误详情
 
 **Commit:** `77b70d731`
