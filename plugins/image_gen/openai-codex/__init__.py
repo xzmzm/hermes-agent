@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from agent.image_gen_provider import (
@@ -74,7 +75,10 @@ _SIZES = {
 # the host that calls the ``image_generation`` tool; the actual image work is
 # done by ``API_MODEL``.
 _CODEX_CHAT_MODEL = "gpt-5.4"
-_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+_CODEX_BASE_URL = os.environ.get(
+    "HERMES_CODEX_BASE_URL",
+    "https://chatgpt.com/backend-api/codex",
+).rstrip("/")
 _CODEX_INSTRUCTIONS = (
     "You are an assistant that must fulfill image generation requests by "
     "using the image_generation tool when provided."

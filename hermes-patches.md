@@ -194,6 +194,34 @@ api_key_present= True
 
 ---
 
+### Patch #16 — image_gen/openai-codex: route image generation through aichatproxy
+
+**Commit:** pending
+**File:** `plugins/image_gen/openai-codex/__init__.py`
+**Env:** `HERMES_CODEX_BASE_URL`
+
+#### 问题
+
+Hermes 的 `image_gen/openai-codex` plugin 硬编码 `_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"`，导致 image generation 请求绕过 localhost aichatproxy，而 chat/vision 的 Codex 请求正常经过 proxy。
+
+#### 修复
+
+```diff
++import os
+
+-_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
++_CODEX_BASE_URL = os.environ.get(
++    "HERMES_CODEX_BASE_URL",
++    "https://chatgpt.com/backend-api/codex",
++).rstrip("/")
+```
+
+#### 依赖
+
+aichatproxy 需要有 `gpt-5.4` → Codex backend 的 route（`supports_responses_api: true`），因为 image plugin 的 host model 是 `gpt-5.4`。
+
+---
+
 ### Patch #15 — `/quota` 通过本地 aichatproxy 查询当前模型额度
 
 **Commit:** pending
@@ -287,4 +315,4 @@ c756e2f4d patch-4: background review send full text + tool summary
 1029b8b9d patch-1: title generation reasoning budget retry
 ```
 
-*最后更新: 2026-06-03（rebase on `6a72af044` v0.15.1, 10 patches, 6 discarded, +1 fix commit）*
+*最后更新: 2026-06-04（rebase on `6a72af044` v0.15.1, 10 patches + 1 pending, 6 discarded, +1 fix commit）*
