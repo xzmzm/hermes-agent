@@ -7777,6 +7777,9 @@ class GatewayRunner:
         if canonical == "codex-runtime":
             return await self._handle_codex_runtime_command(event)
 
+        if canonical == "quota":
+            return await self._handle_quota_command(event)
+
         if canonical == "personality":
             return await self._handle_personality_command(event)
 
@@ -10865,6 +10868,42 @@ class GatewayRunner:
             lines.append(t("gateway.model.session_only_hint"))
 
         return "\n".join(lines)
+
+    async def _handle_quota_command(self, event: MessageEvent) -> str:
+        """Handle /quota by querying local aichatproxy for the current model."""
+        from hermes_cli.quota import fetch_quota_async, render_quota_response
+
+        args = event.get_command_args().strip() if event else ""
+        session_key = self._session_key_for_source(event.source)
+        override = getattr(self, "_session_model_overrides", {}).get(session_key, {}) or {}
+
+        model = args or override.get("model") or _resolve_gateway_model()
+        if not model:
+            return "No current model configured. Use /model first."
+
+        provider = override.get("provider")
+        api_key = override.get("api_key")
+        if not provider or not api_key:
+            try:
+                runtime = _resolve_runtime_agent_kwargs()
+                provider = provider or runtime.get("provider")
+                api_key = api_key or runtime.get("api_key")
+            except Exception as exc:
+                return f"Quota lookup failed while resolving credentials: `{exc}`"
+
+        try:
+            data = await fetch_quota_async(
+                model=model,
+                provider=provider,
+                api_key=api_key if isinstance(api_key, str) else None,
+            )
+        except Exception as exc:
+            return (
+                f"Quota lookup failed: `{exc}`\n"
+                "Is aichatproxy running on `localhost:8000`?"
+            )
+        return render_quota_response(data)
+
 
     async def _handle_codex_runtime_command(self, event: MessageEvent) -> str:
         """Handle /codex-runtime command in the gateway.

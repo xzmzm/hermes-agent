@@ -212,7 +212,7 @@ api_key_present= True
 
 - Z.ai / GLM：`https://api.z.ai/api/monitor/usage/quota/limit` 或中国站 `https://open.bigmodel.cn/api/monitor/usage/quota/limit`
 - DeepSeek：`https://api.deepseek.com/user/balance`
-- Xiaomi MiMo：`https://platform.xiaomimimo.com/tokenPlan/detail`
+- Xiaomi MiMo：`https://platform.xiaomimimo.com/api/v1/tokenPlan/usage`（实测需要 Xiaomi web-login cookie；仅 Token Plan API key 会返回 401）
 - OpenAI Codex OAuth：`https://chatgpt.com/backend-api/wham/usage`，并透传 `ChatGPT-Account-Id` + `User-Agent: codex-cli`
 
 **踩坑笔记：**
@@ -220,7 +220,8 @@ api_key_present= True
 1. Codex 不是 `/backend-api/codex/usage`；该旧路径返回 HTML 403。Hermes 现有 `agent.account_usage` 使用的是 `/backend-api/wham/usage`。
 2. Codex OAuth 必须优先使用 Hermes 当前刷新后的 Bearer token，不能只依赖 aichatproxy route 表里的静态 `api_key`。
 3. 本机环境存在坏的 `SSL_CERT_FILE`，httpx 客户端需 `trust_env=False`，否则创建 client 时会因证书路径不存在报 `FileNotFoundError`。
-4. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
+4. Xiaomi MiMo 的 console quota API 在 `/api/v1/tokenPlan/usage`，不是 SPA fallback `/tokenPlan/usage`；仅用 Token Plan API key 会返回 401，需要 web-login cookie。
+5. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。若需要重启，告知用户，由用户自行操作。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
 
 ---
 
