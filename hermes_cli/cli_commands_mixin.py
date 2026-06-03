@@ -963,6 +963,45 @@ class CLICommandsMixin:
             self._console_print(f"    {header:40s}  {bar}  {pct_str}")
         self._console_print()
 
+    def _handle_quota_command(self, cmd_original: str) -> None:
+        """Show quota for the current model via local aichatproxy."""
+        try:
+            from hermes_cli.quota import fetch_quota, render_quota_response
+        except ImportError as exc:
+            self._console_print(f"  [red]Quota helper unavailable: {exc}[/]")
+            return
+
+        # Resolve/refresh runtime credentials before asking aichatproxy. This
+        # is important for openai-codex OAuth: Hermes may have a fresh access
+        # token even if the stored proxy route key is stale.
+        try:
+            if not self._ensure_runtime_credentials():
+                return
+        except Exception as exc:
+            self._console_print(f"  [red]Could not resolve current credentials:[/] {exc}")
+            return
+
+        raw_args = cmd_original.split(None, 1)
+        model = raw_args[1].strip() if len(raw_args) > 1 and raw_args[1].strip() else (self.model or "")
+        if not model:
+            self._console_print("  [yellow]No current model configured.[/]")
+            return
+
+        try:
+            data = fetch_quota(
+                model=model,
+                provider=self.provider,
+                api_key=self.api_key if isinstance(self.api_key, str) else None,
+            )
+        except Exception as exc:
+            self._console_print(f"  [red]Quota lookup failed:[/] {exc}")
+            self._console_print("  Is aichatproxy running on [bold]localhost:8000[/]?")
+            return
+
+        self._console_print()
+        self._console_print(render_quota_response(data))
+        self._console_print()
+
     def _handle_personality_command(self, cmd: str):
         """Handle the /personality command to set predefined personalities."""
         from cli import save_config_value
