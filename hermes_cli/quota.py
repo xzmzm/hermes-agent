@@ -8,6 +8,7 @@ mapping and knows which provider-specific quota endpoint to call.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -19,6 +20,49 @@ DEFAULT_AICHATPROXY_QUOTA_URL = "http://localhost:8000/api/quota"
 def _provider_label(provider: str | None) -> str:
     p = (provider or "").strip()
     return p or "auto"
+
+
+def _human_duration(seconds: Any) -> str:
+    if seconds in (None, ""):
+        return ""
+    try:
+        total = int(float(seconds))
+    except Exception:
+        return str(seconds)
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts)
+
+
+def _human_timestamp(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        ts = float(value)
+        if ts > 10_000_000_000:  # milliseconds
+            ts /= 1000.0
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+        return dt.strftime("%Y-%m-%d %H:%M:%S %Z")
+    except Exception:
+        return str(value)
+
+
+def _fmt_percent(value: Any) -> str:
+    try:
+        n = float(value)
+        return f"{n:g}%"
+    except Exception:
+        return f"{value}%"
 
 
 def build_quota_payload(*, model: str, provider: str | None = None) -> dict[str, Any]:
@@ -50,6 +94,10 @@ def render_quota_response(data: dict[str, Any]) -> str:
         plan = normalized.get("plan")
         if plan:
             lines.append(f"Plan: `{plan}`")
+        if "allowed" in normalized:
+            lines.append(f"Allowed: `{normalized.get('allowed')}`")
+        if "limit_reached" in normalized:
+            lines.append(f"Limit reached: `{normalized.get('limit_reached')}`")
         if balance is not None:
             lines.append(f"Balance: `{balance}`{(' ' + unit) if unit else ''}")
         balances = normalized.get("balances")
@@ -68,16 +116,55 @@ def render_quota_response(data: dict[str, Any]) -> str:
                     parts.append(f"top-up `{topped_up}`")
                 lines.append(f"Balance {currency}: " + ", ".join(parts))
         if remaining is not None:
-            lines.append(f"Remaining: `{remaining}`{(' ' + unit) if unit else ''}")
+            if unit == "%":
+                lines.append(f"Remaining: `{_fmt_percent(remaining)}`")
+            else:
+                lines.append(f"Remaining: `{remaining}`{(' ' + unit) if unit else ''}")
         if used is not None:
-            lines.append(f"Used: `{used}`{(' ' + unit) if unit else ''}")
+            if unit == "%":
+                lines.append(f"Used: `{_fmt_percent(used)}`")
+            else:
+                lines.append(f"Used: `{used}`{(' ' + unit) if unit else ''}")
         used_percent = normalized.get("used_percent")
         if used_percent is not None:
             lines.append(f"Used percent: `{used_percent}`%")
         if total is not None:
             lines.append(f"Total: `{total}`{(' ' + unit) if unit else ''}")
         if reset_at:
-            lines.append(f"Reset: `{reset_at}`")
+            reset_text = normalized.get("reset_at_local") or _human_timestamp(reset_at)
+            reset_after = normalized.get("reset_after_human") or _human_duration(normalized.get("reset_after_seconds"))
+            if reset_after:
+                lines.append(f"Reset: `{reset_text}` (in `{reset_after}`)")
+            else:
+                lines.append(f"Reset: `{reset_text}`")
+        windows = normalized.get("windows")
+        if isinstance(windows, list) and windows:
+            lines.append("Rate limit windows:")
+            for item in windows:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name") or "window"
+                window_human = item.get("limit_window_human") or _human_duration(item.get("limit_window_seconds"))
+                reset_after = item.get("reset_after_human") or _human_duration(item.get("reset_after_seconds"))
+                reset_at_text = item.get("reset_at_local") or _human_timestamp(item.get("reset_at"))
+                used_text = _fmt_percent(item.get("used_percent"))
+                remaining = item.get("remaining_percent")
+                parts = [f"window `{window_human}`", f"used `{used_text}`"]
+                if remaining is not None:
+                    parts.append(f"remaining `{_fmt_percent(remaining)}`")
+                if reset_after:
+                    parts.append(f"resets in `{reset_after}`")
+                if reset_at_text:
+                    parts.append(f"at `{reset_at_text}`")
+                lines.append(f"- {name}: " + ", ".join(parts))
+        credits = normalized.get("credits")
+        if isinstance(credits, dict):
+            credit_bits = []
+            for key in ("has_credits", "unlimited", "balance"):
+                if key in credits:
+                    credit_bits.append(f"{key} `{credits[key]}`")
+            if credit_bits:
+                lines.append("Credits: " + ", ".join(credit_bits))
         limits = normalized.get("limits")
         if isinstance(limits, list) and limits:
             lines.append("Limits:")
@@ -93,7 +180,8 @@ def render_quota_response(data: dict[str, Any]) -> str:
                 lines.append(f"- {label}: " + ", ".join(details))
 
     raw = data.get("raw")
-    if raw is not None:
+    show_raw = raw is not None and (not isinstance(normalized, dict) or not normalized or status != "ok")
+    if show_raw:
         try:
             pretty = json.dumps(raw, ensure_ascii=False, indent=2)
         except Exception:

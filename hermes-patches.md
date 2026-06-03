@@ -219,9 +219,11 @@ api_key_present= True
 
 1. Codex 不是 `/backend-api/codex/usage`；该旧路径返回 HTML 403。Hermes 现有 `agent.account_usage` 使用的是 `/backend-api/wham/usage`。
 2. Codex OAuth 必须优先使用 Hermes 当前刷新后的 Bearer token，不能只依赖 aichatproxy route 表里的静态 `api_key`。
-3. 本机环境存在坏的 `SSL_CERT_FILE`，httpx 客户端需 `trust_env=False`，否则创建 client 时会因证书路径不存在报 `FileNotFoundError`。
-4. Xiaomi MiMo 的 console quota API 在 `/api/v1/tokenPlan/usage`，不是 SPA fallback `/tokenPlan/usage`；仅用 Token Plan API key 会返回 401，需要 web-login cookie。
-5. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。若需要重启，告知用户，由用户自行操作。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
+3. 但 Z.ai / DeepSeek / Xiaomi 这类 API-key provider 必须使用 aichatproxy route 表中的 `api_key`，不能误用 Hermes 当前模型传过来的 Codex Bearer。
+4. Codex `/wham/usage` 返回 primary/secondary 两个窗口：primary 是 5h，secondary 是 7d；渲染时要把 `reset_after_seconds` / `reset_at` 转成人能看的本地时间。
+5. 本机环境存在坏的 `SSL_CERT_FILE`，httpx 客户端需 `trust_env=False`，否则创建 client 时会因证书路径不存在报 `FileNotFoundError`。
+6. Xiaomi MiMo 的 console quota API 在 `/api/v1/tokenPlan/usage`，不是 SPA fallback `/tokenPlan/usage`；仅用 Token Plan API key 会返回 401，需要 web-login cookie。
+7. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。若需要重启，告知用户，由用户自行操作。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
 
 ---
 
