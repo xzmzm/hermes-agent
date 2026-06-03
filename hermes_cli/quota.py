@@ -173,10 +173,13 @@ def render_quota_response(data: dict[str, Any]) -> str:
                     continue
                 label = item.get("type") or "limit"
                 details = []
-                for key in ("remaining", "used", "total", "used_percent", "reset_at"):
+                for key in ("remaining", "used", "total"):
                     if key in item:
-                        suffix = "%" if key == "used_percent" else ""
-                        details.append(f"{key} `{item[key]}`{suffix}")
+                        details.append(f"{key} `{item[key]}`")
+                if "used_percent" in item:
+                    details.append(f"used {_fmt_percent(item['used_percent'])}")
+                if "reset_at" in item:
+                    details.append(f"resets at `{_human_timestamp(item['reset_at'])}`")
                 lines.append(f"- {label}: " + ", ".join(details))
 
     raw = data.get("raw")
