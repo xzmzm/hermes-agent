@@ -194,34 +194,6 @@ api_key_present= True
 
 ---
 
-### Patch #16 — image_gen/openai-codex: route image generation through aichatproxy
-
-**Commit:** pending
-**File:** `plugins/image_gen/openai-codex/__init__.py`
-**Env:** `HERMES_CODEX_BASE_URL`
-
-#### 问题
-
-Hermes 的 `image_gen/openai-codex` plugin 硬编码 `_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"`，导致 image generation 请求绕过 localhost aichatproxy，而 chat/vision 的 Codex 请求正常经过 proxy。
-
-#### 修复
-
-```diff
-+import os
-
--_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
-+_CODEX_BASE_URL = os.environ.get(
-+    "HERMES_CODEX_BASE_URL",
-+    "https://chatgpt.com/backend-api/codex",
-+).rstrip("/")
-```
-
-#### 依赖
-
-aichatproxy 需要有 `gpt-5.4` → Codex backend 的 route（`supports_responses_api: true`），因为 image plugin 的 host model 是 `gpt-5.4`。
-
----
-
 ### Patch #15 — `/quota` 通过本地 aichatproxy 查询当前模型额度
 
 **Commit:** pending
@@ -253,6 +225,35 @@ aichatproxy 需要有 `gpt-5.4` → Codex backend 的 route（`supports_response
 6. Xiaomi MiMo 的 console quota API 在 `/api/v1/tokenPlan/usage`，不是 SPA fallback `/tokenPlan/usage`；仅用 Token Plan API key 会返回 401，需要 web-login cookie。
 7. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。若需要重启，告知用户，由用户自行操作。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
 8. Z.ai 的 `reset_at` 是毫秒级时间戳（如 `1781338292982`），渲染时需转成本地可读时间；Limits 详情里的 `reset_at` / `used_percent` 也要格式化，不能直接输出原始数字。
+
+---
+
+### Patch #16 — image_gen/openai-codex: route image generation through aichatproxy
+
+**Commit:** `9eab001fe`
+**File:** `plugins/image_gen/openai-codex/__init__.py`
+**Env:** `HERMES_CODEX_BASE_URL`
+
+#### 问题
+
+Hermes 的 `image_gen/openai-codex` plugin 硬编码 `_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"`，导致 image generation 请求绕过 localhost aichatproxy，而 chat/vision 的 Codex 请求正常经过 proxy。
+
+#### 修复
+
+```diff
++import os
+
+-_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
++_CODEX_BASE_URL = os.environ.get(
++    "HERMES_CODEX_BASE_URL",
++    "https://chatgpt.com/backend-api/codex",
++).rstrip("/")
+```
+
+#### 依赖
+
+aichatproxy 需要有 `gpt-5.4` → Codex backend 的 route（`supports_responses_api: true`），因为 image plugin 的 host model 是 `gpt-5.4`。
+
 ---
 
 ### Fix — Gateway provider failure 包含原始错误详情
