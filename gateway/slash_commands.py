@@ -1338,9 +1338,18 @@ class GatewaySlashCommandsMixin:
     async def _handle_quota_command(self, event: MessageEvent) -> str:
         """Handle /quota by querying local aichatproxy for the current model."""
         from hermes_cli.quota import fetch_quota_async, render_quota_response
+        from gateway.run import _load_gateway_config
 
-        model = getattr(self, "_current_model", None) or ""
-        provider = getattr(self, "_current_provider", None) or ""
+        raw_args = event.get_command_args().strip()
+        cfg = _load_gateway_config()
+        model_cfg = cfg.get("model", {})
+        if raw_args:
+            model = raw_args
+        elif isinstance(model_cfg, dict):
+            model = model_cfg.get("default") or model_cfg.get("model") or ""
+        else:
+            model = str(model_cfg)
+        provider = (model_cfg.get("provider") if isinstance(model_cfg, dict) else None) or ""
         try:
             data = await fetch_quota_async(
                 model=model,
