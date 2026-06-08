@@ -293,7 +293,7 @@ Provider 返回错误时，Telegram 回复中包含原始 error detail（而不�
 | Branch | 用途 |
 |--------|------|
 | `main` | 上游最新 `c3055d618` (v0.16.0 / v2026.6.5)，不做修改 |
-| `local-patches` | 10 patch commits + 1 fix commit + quota feature + docs，基于最新 main |
+| `local-patches` | 10 patch commits + quota feature + refactor commits + docs，基于最新 main |
 | `local-patches-archive` | 完整旧历史（27 commits，含废弃的 pre-v0.14 commits） |
 | Tag `local-patches-pre-update-20260608` | v0.16.0 rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-update-20260530` | v0.15.1 rebase 之前的 local-patches 快照 |
