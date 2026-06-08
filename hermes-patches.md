@@ -13,10 +13,10 @@
 
 ---
 
-## Active Patches (10 patch commits + 1 fix commit + quota feature commits + docs on `local-patches`)
+## Active Patches (10 patch commits + fix/refactor commits + quota feature commits + docs on `local-patches`)
 
 Rebased on upstream `c3055d618` (v0.16.0, tag `v2026.6.5`, +919 commits from v0.15.1)。
-每个 patch 修改不同文件，零文件重叠。
+每个 patch 修改不同文件，零文件重叠。`gateway/run.py` 和 `cli.py` 仅含上游代码 + 3 行 quota dispatcher。
 
 ### Patch #1 — 对话标题 reasoning budget retry
 
@@ -265,6 +265,24 @@ aichatproxy 需要有 `gpt-5.4` → Codex backend 的 route（`supports_response
 
 Provider 返回错误时，Telegram 回复中包含原始 error detail（而不只是 generic message），方便排查。
 
+> ⚠️ **v0.16.0 rebase 注意**：上游 main 已包含 `error_detail` 在回复中，此 patch 已被上游采纳。保留 commit 不影响。
+
+### Refactor — 恢复干净上游 run.py/cli.py，删除冗余方法
+
+**Commit:** `774bb12be`
+
+v0.16.0 rebase 后，`gateway/run.py` 和 `cli.py` 保留了 40+ 个旧 `_handle_*` 方法（上游已迁移到 `GatewaySlashCommandsMixin` 和 `CLICommandsMixin`）。此 commit 将两个文件恢复为上游 main 版本，仅保留 3 行 quota dispatcher。效果：
+
+- `gateway/run.py` vs main: +3 lines
+- `cli.py` vs main: +3 lines
+- 零删除上游代码，纯 additive
+
+### Fix — 恢复 GatewayRunner mixin 继承
+
+**Commit:** `b1144267f`
+
+Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin)` 继承和对应 import，导致 `/resume` 报 `AttributeError`。已恢复。
+
 ---
 
 ---
@@ -284,7 +302,8 @@ Provider 返回错误时，Telegram 回复中包含原始 error detail（而不�
 
 ## Dead code removed (pre-rebase 清理)
 
-- `_escape_title_mdv2()` + `_MDV2_ESCAPE_RE` in `gateway/run.py` — 从未被调用，`format_message()` 处理所有 MarkdownV2 转义。
+- ~~`_escape_title_mdv2()` + `_MDV2_ESCAPE_RE` in `gateway/run.py`~~ — v0.16.0 rebase 后 run.py 恢复为干净上游版，此条过时。
+- **v0.16.0 rebase**：从 `gateway/run.py` 删除 40 个冗余 `_handle_*` 方法（上游已迁移到 mixin），从 `cli.py` 删除 33 个（同理）。见 refactor commit `774bb12be`。
 
 ---
 
@@ -305,6 +324,10 @@ Provider 返回错误时，Telegram 回复中包含原始 error detail（而不�
 ## Commit history
 
 ```
+0248f20f0 docs: update hermes-patches.md branch description
+774bb12be refactor: restore clean upstream run.py/cli.py, re-apply only minimal patches
+b1144267f fix: restore mixin inheritance on GatewayRunner (lost during rebase)
+052e311b5 docs: update hermes-patches.md for v0.16.0 rebase (2026-06-08)
 6b5f98d59 fix: add inline keyboard to /resume in slash_commands mixin (migrated from run.py)
 4d8fb1e13 fix: reorder patches #15/#16 in hermes-patches.md
 70fa51eff patch-16: honor HERMES_CODEX_BASE_URL in image_gen/openai-codex plugin
@@ -328,4 +351,4 @@ ffb05ad7e patch-4: background review send full text + tool summary
 30edebfed patch-1: title generation reasoning budget retry
 ```
 
-*最后更新: 2026-06-08（rebase on `c3055d618` v0.16.0, 10 patches + 1 fix + quota feature, 6 discarded）*
+*最后更新: 2026-06-08（rebase on `c3055d618` v0.16.0, 10 patches + fix/refactor + quota feature, 6 discarded）*
