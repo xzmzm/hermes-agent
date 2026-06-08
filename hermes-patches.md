@@ -198,8 +198,8 @@ api_key_present= True
 
 ### Patch #15 — `/quota` 通过本地 aichatproxy 查询当前模型额度
 
-**Commit:** pending
-**Files:** `hermes_cli/commands.py`, `hermes_cli/quota.py`, `cli.py`, `gateway/run.py`
+**Commit:** `f1f85b5b1` + `1439e318e`（修复 gateway /quota 读取 config.yaml）
+**Files:** `hermes_cli/commands.py`, `hermes_cli/quota.py`, `cli.py`, `gateway/run.py`, `gateway/slash_commands.py`
 **Local service:** `http://localhost:8000/api/quota`（由 `~/prj/aichatproxy` 提供）
 
 新增 `/quota` slash command：
@@ -324,6 +324,7 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 ## Commit history
 
 ```
+1439e318e fix: gateway /quota reads model/provider from config.yaml instead of nonexistent _current_model
 0248f20f0 docs: update hermes-patches.md branch description
 774bb12be refactor: restore clean upstream run.py/cli.py, re-apply only minimal patches
 b1144267f fix: restore mixin inheritance on GatewayRunner (lost during rebase)
