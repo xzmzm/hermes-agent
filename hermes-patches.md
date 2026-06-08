@@ -13,14 +13,14 @@
 
 ---
 
-## Active Patches (10 patch commits + 1 fix commit + docs on `local-patches`)
+## Active Patches (10 patch commits + 1 fix commit + quota feature commits + docs on `local-patches`)
 
-Rebased on upstream `6a72af044` (v0.15.1, +881 commits from `1e71b7180`)。
+Rebased on upstream `c3055d618` (v0.16.0, tag `v2026.6.5`, +919 commits from v0.15.1)。
 每个 patch 修改不同文件，零文件重叠。
 
 ### Patch #1 — 对话标题 reasoning budget retry
 
-**Commit:** `1029b8b9d`
+**Commit:** `30edebfed`
 **File:** `agent/title_generator.py`（`generate_title()` L54-75）
 
 #### 演进
@@ -36,7 +36,7 @@ Rebased on upstream `6a72af044` (v0.15.1, +881 commits from `1e71b7180`)。
 
 ### Patch #2 — 主客户端 HERMES_DEFAULT_HEADERS + RooCode UA fallback
 
-**Commit:** `375ae2e6a`
+**Commit:** `0db8c116e`
 **File:** `agent/agent_init.py`（L656-670）
 **Env:** `HERMES_DEFAULT_HEADERS`（JSON dict）
 
@@ -53,7 +53,7 @@ HERMES_DEFAULT_HEADERS={"http-referer":"https://github.com/RooVetGit/Roo-Cline",
 
 ### Patch #4 — Background review 发送完整文本回复
 
-**Commit:** `c756e2f4d`
+**Commit:** `ffb05ad7e`
 **File:** `agent/background_review.py`（L498-537）
 
 从 review_messages 中提取最后一条 assistant 文本响应，与 tool action summary 合并通过 `background_review_callback` 发送。
@@ -70,7 +70,7 @@ HERMES_DEFAULT_HEADERS={"http-referer":"https://github.com/RooVetGit/Roo-Cline",
 
 ### Patch #7 — 修复 `_is_ollama_glm_backend()` 误判本地代理
 
-**Commit:** `63182c22d`
+**Commit:** `0d4ae64c8`
 **File:** `run_agent.py`（L1040）
 
 **问题**：`_is_ollama_glm_backend()` 最后用 `is_local_endpoint()` 做 fallback，导致 aichatproxy (localhost:8000) 等代理被误判为 Ollama 后端，触发 stop token 误报 + 自动 continuation。
@@ -81,10 +81,10 @@ HERMES_DEFAULT_HEADERS={"http-referer":"https://github.com/RooVetGit/Roo-Cline",
 
 ### Patch #8 — Telegram `/resume` 编号 + inline keyboard
 
-**Commit:** `8da940f5b`
-**Files:** `gateway/run.py` + `gateway/platforms/telegram.py`
+**Commit:** `436f388b7`
+**Files:** `gateway/platforms/telegram.py` + `gateway/slash_commands.py`
 
-**`gateway/run.py` — `_handle_resume_command()`**：
+**`gateway/slash_commands.py` — `_handle_resume_command()`**（mixin，v0.16.0 从 run.py 提取）：
 - 返回类型 `Optional[str]`（None = 已自行发送，不重复）
 - 无参数时显示编号列表：`1. Title` `2. Title`（融合 upstream i18n `t()`）
 - `/resume 1` 按编号恢复
@@ -115,7 +115,7 @@ Bot:  [i18n 列表头]
 
 ### Patch #9 — `/model` 模型不在 listing 时 warn-but-accept
 
-**Commit:** `f37b876aa`
+**Commit:** `420794042`
 **File:** `hermes_cli/models.py`（L3675）
 
 **问题**：Z.AI Pro/Max 的 `glm-5` 在 coding endpoint 可用但不在 `/v1/models` listing 里，Hermes 直接报错拒绝。代码注释写着 "Accept anyway — Warn but allow" 但 `accepted` 字段写反了 `False`。
@@ -126,7 +126,7 @@ Bot:  [i18n 列表头]
 
 ### Patch #11 — Cross-provider search 对 custom/localhost 开放
 
-**Commit:** `0051e67f1`
+**Commit:** `ffaf62ace`
 **File:** `hermes_cli/model_switch.py`（L831）
 
 删除 `detect_provider_for_model()` 调用前的 `and not is_custom` 条件。让 localhost/proxy 用户（如 aichatproxy）也能触发 cross-provider 模型搜索。
@@ -135,7 +135,7 @@ Bot:  [i18n 列表头]
 
 ### Patch #13 — Auxiliary client HERMES_DEFAULT_HEADERS fallback
 
-**Commit:** `71a3aa83f`
+**Commit:** `63dc7d2d9`
 **File:** `agent/auxiliary_client.py`（6 处 fallback）
 
 新增 `_get_hermes_default_headers()` helper（读 env JSON，fallback RooCode UA）。注入到 6 个 client 创建路径：
@@ -149,11 +149,13 @@ Bot:  [i18n 列表头]
 
 每处都只在 `default_headers` 未设置时才 fallback。与 patch #2 互补（#2 管主客户端，#13 管 auxiliary 客户端）。
 
+**v0.16.0 变更**：上游新增 `_apply_user_default_headers()`（读 config.yaml `model.default_headers`）。银月将两者合并：先 `_get_hermes_default_headers()` 设置默认值，再 `_apply_user_default_headers()` 叠加用户配置。
+
 ---
 
 ### Patch #14 — pooled `openai-codex` credentials honor `HERMES_CODEX_BASE_URL`
 
-**Commit:** `92d8ba235`
+**Commit:** `a8dddc3ef`
 **File:** `hermes_cli/runtime_provider.py`（`_resolve_runtime_from_pool_entry()` L309-312）
 **Env:** `HERMES_CODEX_BASE_URL`
 
@@ -230,7 +232,7 @@ api_key_present= True
 
 ### Patch #16 — image_gen/openai-codex: route image generation through aichatproxy
 
-**Commit:** `9eab001fe`
+**Commit:** `70fa51eff`
 **File:** `plugins/image_gen/openai-codex/__init__.py`
 **Env:** `HERMES_CODEX_BASE_URL`
 
@@ -258,7 +260,7 @@ aichatproxy 需要有 `gpt-5.4` → Codex backend 的 route（`supports_response
 
 ### Fix — Gateway provider failure 包含原始错误详情
 
-**Commit:** `77b70d731`
+**Commit:** `89787893c`
 **File:** `gateway/run.py`
 
 Provider 返回错误时，Telegram 回复中包含原始 error detail（而不只是 generic message），方便排查。
@@ -290,9 +292,10 @@ Provider 返回错误时，Telegram 回复中包含原始 error detail（而不�
 
 | Branch | 用途 |
 |--------|------|
-| `main` | 上游最新 `6a72af044` (v0.15.1)，不做修改 |
-| `local-patches` | 10 patch commits + 1 fix commit + docs，基于最新 main |
+| `main` | 上游最新 `c3055d618` (v0.16.0 / v2026.6.5)，不做修改 |
+| `local-patches` | 10 patch commits + 1 fix commit + quota feature + docs，基于最新 main |
 | `local-patches-archive` | 完整旧历史（27 commits，含废弃的 pre-v0.14 commits） |
+| Tag `local-patches-pre-update-20260608` | v0.16.0 rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-update-20260530` | v0.15.1 rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-update-20260523` | v0.14.x rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-v0.14` | v0.14.0 rebase 之前的快照 |
@@ -302,18 +305,27 @@ Provider 返回错误时，Telegram 回复中包含原始 error detail（而不�
 ## Commit history
 
 ```
-92d8ba235 patch-14: honor HERMES_CODEX_BASE_URL for pooled Codex credentials
-2f07d25a3 docs: update hermes-patches.md for 2026-05-30 v0.15.1 rebase
-dae98ff0b docs: update hermes-patches.md for 2026-05-23 rebase (new commit hashes, +2 fix commits)
-77b70d731 fix(gateway): include raw error detail in provider failure Telegram replies
-71a3aa83f patch-13: apply HERMES_DEFAULT_HEADERS to all auxiliary HTTP clients
-0051e67f1 patch-11: allow cross-provider search for custom/localhost providers
-f37b876aa patch-9: model not in API listing -> accepted with warning
-8da940f5b patch-8: Telegram /resume with numbered sessions + inline keyboard buttons
-63182c22d patch-7: fix _is_ollama_glm_backend() false positive on localhost/proxy endpoints
-c756e2f4d patch-4: background review send full text + tool summary
-375ae2e6a patch-2: read custom headers from HERMES_DEFAULT_HEADERS env var (JSON)
-1029b8b9d patch-1: title generation reasoning budget retry
+6b5f98d59 fix: add inline keyboard to /resume in slash_commands mixin (migrated from run.py)
+4d8fb1e13 fix: reorder patches #15/#16 in hermes-patches.md
+70fa51eff patch-16: honor HERMES_CODEX_BASE_URL in image_gen/openai-codex plugin
+a9ea03c11 docs: add limits timestamp formatting note
+5f6a90d85 fix: humanize timestamps in quota limits detail
+ac6200e6d fix: render codex quota windows
+f1f85b5b1 feat: add quota slash command
+274bafc6a docs: record quota local patch
+95521f5e9 docs: add patch #14 to hermes-patches.md
+a8dddc3ef patch-14: honor HERMES_CODEX_BASE_URL for pooled Codex credentials
+1ccfa9f6f docs: update hermes-patches.md for 2026-05-30 v0.15.1 rebase
+d8752ce95 docs: update hermes-patches.md for 2026-05-23 rebase (new commit hashes, +2 fix commits)
+89787893c fix(gateway): include raw error detail in provider failure Telegram replies
+63dc7d2d9 patch-13: apply HERMES_DEFAULT_HEADERS to all auxiliary HTTP clients
+ffaf62ace patch-11: allow cross-provider search for custom/localhost providers
+420794042 patch-9: model not in API listing -> accepted with warning
+436f388b7 patch-8: Telegram /resume with numbered sessions + inline keyboard buttons
+0d4ae64c8 patch-7: fix _is_ollama_glm_backend() false positive on localhost/proxy endpoints
+ffb05ad7e patch-4: background review send full text + tool summary
+0db8c116e patch-2: read custom headers from HERMES_DEFAULT_HEADERS env var (JSON)
+30edebfed patch-1: title generation reasoning budget retry
 ```
 
-*最后更新: 2026-06-04（rebase on `6a72af044` v0.15.1, 10 patches + 1 pending, 6 discarded, +1 fix commit）*
+*最后更新: 2026-06-08（rebase on `c3055d618` v0.16.0, 10 patches + 1 fix + quota feature, 6 discarded）*
