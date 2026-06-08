@@ -1054,9 +1054,11 @@ from gateway.restart import (
 
 from gateway.whatsapp_identity import (
     canonical_whatsapp_identifier as _canonical_whatsapp_identifier,  # noqa: F401
-    expand_whatsapp_aliases as _expand_whatsapp_auth_aliases,
+    expand_whatsapp_auth_aliases as _expand_whatsapp_auth_aliases,
     normalize_whatsapp_identifier as _normalize_whatsapp_identifier,
 )
+from gateway.kanban_watchers import GatewayKanbanWatchersMixin
+from gateway.slash_commands import GatewaySlashCommandsMixin
 
 
 logger = logging.getLogger(__name__)
@@ -1661,7 +1663,7 @@ def _preserve_queued_followup_history_offset(
     return merged
 
 
-class GatewayRunner:
+class GatewayRunner(GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin):
     """
     Main gateway controller.
 
