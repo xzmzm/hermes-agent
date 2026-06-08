@@ -1335,6 +1335,24 @@ class GatewaySlashCommandsMixin:
         prefix = "✓" if result.success else "✗"
         return f"{prefix} {result.message}"
 
+    async def _handle_quota_command(self, event: MessageEvent) -> str:
+        """Handle /quota by querying local aichatproxy for the current model."""
+        from hermes_cli.quota import fetch_quota_async, render_quota_response
+
+        model = getattr(self, "_current_model", None) or ""
+        provider = getattr(self, "_current_provider", None) or ""
+        try:
+            data = await fetch_quota_async(
+                model=model,
+                provider=provider,
+            )
+        except Exception as exc:
+            return (
+                f"Failed to fetch quota: {exc}\n\n"
+                "Is aichatproxy running on `localhost:8000`?"
+            )
+        return render_quota_response(data)
+
     async def _handle_personality_command(self, event: MessageEvent) -> str:
         """Handle /personality command - list or set a personality."""
         from gateway.run import _hermes_home, _load_gateway_config
