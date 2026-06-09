@@ -1337,7 +1337,11 @@ class GatewaySlashCommandsMixin:
 
     async def _handle_quota_command(self, event: MessageEvent) -> str:
         """Handle /quota by querying local aichatproxy for the current model."""
-        from hermes_cli.quota import fetch_quota_async, render_quota_response
+        from hermes_cli.quota import (
+            fetch_quota_async,
+            render_quota_response,
+            resolve_quota_target,
+        )
         from gateway.run import _load_gateway_config, _resolve_gateway_model
 
         raw_args = event.get_command_args().strip()
@@ -1379,6 +1383,16 @@ class GatewaySlashCommandsMixin:
                     model = runtime.get("model") or model
             except Exception:
                 logger.debug("could not resolve runtime credentials for /quota", exc_info=True)
+
+        target = resolve_quota_target(
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            explicit_model=bool(raw_args),
+        )
+        model = str(target.get("model") or model)
+        provider = str(target.get("provider") or provider)
+        api_key = target.get("api_key") if isinstance(target.get("api_key"), str) else None
 
         try:
             data = await fetch_quota_async(

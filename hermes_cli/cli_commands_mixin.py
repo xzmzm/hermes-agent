@@ -966,7 +966,7 @@ class CLICommandsMixin:
     def _handle_quota_command(self, cmd_original: str) -> None:
         """Show quota for the current model via local aichatproxy."""
         try:
-            from hermes_cli.quota import fetch_quota, render_quota_response
+            from hermes_cli.quota import fetch_quota, render_quota_response, resolve_quota_target
         except ImportError as exc:
             self._console_print(f"  [red]Quota helper unavailable: {exc}[/]")
             return
@@ -982,16 +982,24 @@ class CLICommandsMixin:
             return
 
         raw_args = cmd_original.split(None, 1)
-        model = raw_args[1].strip() if len(raw_args) > 1 and raw_args[1].strip() else (self.model or "")
+        explicit_model = len(raw_args) > 1 and bool(raw_args[1].strip())
+        model = raw_args[1].strip() if explicit_model else (self.model or "")
         if not model:
             self._console_print("  [yellow]No current model configured.[/]")
             return
 
+        target = resolve_quota_target(
+            model=model,
+            provider=self.provider,
+            api_key=self.api_key if isinstance(self.api_key, str) else None,
+            explicit_model=explicit_model,
+        )
+
         try:
             data = fetch_quota(
-                model=model,
-                provider=self.provider,
-                api_key=self.api_key if isinstance(self.api_key, str) else None,
+                model=str(target.get("model") or model),
+                provider=str(target.get("provider") or self.provider or ""),
+                api_key=target.get("api_key") if isinstance(target.get("api_key"), str) else None,
             )
         except Exception as exc:
             self._console_print(f"  [red]Quota lookup failed:[/] {exc}")

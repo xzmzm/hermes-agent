@@ -227,6 +227,59 @@ def _quota_headers(provider: str | None, api_key: str | None) -> dict[str, str]:
     return headers
 
 
+def resolve_quota_target(
+    *,
+    model: str,
+    provider: str | None = None,
+    api_key: str | None = None,
+    explicit_model: bool = False,
+) -> dict[str, str | None]:
+    """Resolve the provider/API key to use for a quota lookup.
+
+    ``/quota <model>`` is different from ``/quota``: an explicit model can
+    point at a provider other than the active chat provider.  For example, a
+    session currently running on ``openai-codex`` may ask ``/quota glm-5.1``;
+    the request must use the Z.AI provider and ``GLM_API_KEY`` placeholder so
+    aichatproxy can swap it for the real route key.  Without this step the
+    Codex OAuth token is sent to the Z.AI quota endpoint and gets a 401.
+    """
+    resolved_model = (model or "").strip()
+    resolved_provider = (provider or "").strip()
+    resolved_api_key = api_key if isinstance(api_key, str) else None
+
+    if not explicit_model or not resolved_model:
+        return {
+            "model": resolved_model,
+            "provider": resolved_provider,
+            "api_key": resolved_api_key,
+        }
+
+    try:
+        from hermes_cli.auth import resolve_api_key_provider_credentials
+        from hermes_cli.models import detect_provider_for_model
+
+        detected = detect_provider_for_model(resolved_model, resolved_provider)
+        if detected:
+            detected_provider, detected_model = detected
+            provider_changed = detected_provider != resolved_provider
+            resolved_provider = detected_provider
+            resolved_model = detected_model or resolved_model
+            if provider_changed or not resolved_api_key:
+                creds = resolve_api_key_provider_credentials(detected_provider)
+                key = creds.get("api_key")
+                resolved_api_key = key if isinstance(key, str) else ""
+    except Exception:
+        # Quota lookup should still try the caller-provided provider/key if
+        # model detection or credential lookup fails.
+        pass
+
+    return {
+        "model": resolved_model,
+        "provider": resolved_provider,
+        "api_key": resolved_api_key,
+    }
+
+
 def fetch_quota(
     *,
     model: str,
