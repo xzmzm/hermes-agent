@@ -287,6 +287,17 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 
 ---
 
+### Patch #17 — `fetch_models()` 传入 config-resolved `base_url`
+
+**Commit:** `6299f299a`
+**Files:** `providers/base.py`, `hermes_cli/models.py`
+
+**问题**：`.env` 里设置了 `GLM_BASE_URL=http://localhost:8000/zai/v1`（通过 aichatproxy 路由），但 `/model` picker 的 `fetch_models()` 只用 provider profile 硬编码的 `base_url`（`https://api.z.ai/api/coding/paas/v4`），导致 `/v1/models` 请求绕过 aichatproxy，返回空或错误，最终 fallback 到 2 个模型（glm-5, glm-4-9b）。
+
+**修复**：
+- `ProviderProfile.fetch_models()` 新增 `base_url` 参数，优先级：`models_url` > `caller base_url` > `self.base_url`
+- `provider_model_ids()` 将 `.env` 解析的 `base_url` 传入 `fetch_models(base_url=base_url)`
+
 ---
 
 ## Discarded Patches (upstream 已实现或更好)
@@ -326,6 +337,7 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 ## Commit history
 
 ```
+6299f299a patch-17: pass config-resolved base_url to fetch_models() for /model picker
 6678b81a0 fix: resolve explicit quota model credentials
 b78979a16 fix: forward runtime credentials in gateway quota command
 1439e318e fix: gateway /quota reads model/provider from config.yaml instead of nonexistent _current_model
@@ -356,4 +368,4 @@ ffb05ad7e patch-4: background review send full text + tool summary
 30edebfed patch-1: title generation reasoning budget retry
 ```
 
-*最后更新: 2026-06-09（rebase on `c3055d618` v0.16.0, 10 patches + fix/refactor + quota feature, 6 discarded）*
+*最后更新: 2026-06-09（rebase on `c3055d618` v0.16.0, 11 patches + fix/refactor + quota feature, 6 discarded）*
