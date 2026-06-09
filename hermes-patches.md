@@ -198,7 +198,7 @@ api_key_present= True
 
 ### Patch #15 — `/quota` 通过本地 aichatproxy 查询当前模型额度
 
-**Commit:** `f1f85b5b1` + `1439e318e`（修复 gateway /quota 读取 config.yaml）+ `b78979a16`（gateway 透传 runtime credentials）
+**Commit:** `f1f85b5b1` + `1439e318e`（修复 gateway /quota 读取 config.yaml）+ `b78979a16`（gateway 透传 runtime credentials）+ `6678b81a0`（显式 `/quota <model>` 解析 provider/key）
 **Files:** `hermes_cli/commands.py`, `hermes_cli/quota.py`, `cli.py`, `gateway/run.py`, `gateway/slash_commands.py`
 **Local service:** `http://localhost:8000/api/quota`（由 `~/prj/aichatproxy` 提供）
 
@@ -228,6 +228,7 @@ api_key_present= True
 7. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。若需要重启，告知用户，由用户自行操作。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
 8. Z.ai 的 `reset_at` 是毫秒级时间戳（如 `1781338292982`），渲染时需转成本地可读时间；Limits 详情里的 `reset_at` / `used_percent` 也要格式化，不能直接输出原始数字。
 9. Gateway `/quota` 不能只读 config.yaml 后裸调 aichatproxy：Codex route 通常 `api_key` 为空，必须从 per-session `/model` override 或 `resolve_runtime_provider()` 取 fresh OAuth Bearer token，并作为 `api_key` 传给 `fetch_quota_async()`。否则 aichatproxy `/api/quota` 会返回 HTTP 400：`No API key/Bearer token available for selected route`。
+10. 显式 `/quota <model>` 不能复用当前会话 provider/key。例如当前会话是 `openai-codex` 时，`/quota glm-5.1` 必须通过 `detect_provider_for_model()` 识别为 `zai`，再从 `resolve_api_key_provider_credentials("zai")` 取得 `GLM_API_KEY`（即便是 placeholder `a1a1a1`），让 aichatproxy 替换为真实 route key。否则会把 Codex OAuth token 发给 Z.AI quota endpoint，得到 401 `Could not parse your authentication token`。
 
 ---
 
@@ -325,6 +326,7 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 ## Commit history
 
 ```
+6678b81a0 fix: resolve explicit quota model credentials
 b78979a16 fix: forward runtime credentials in gateway quota command
 1439e318e fix: gateway /quota reads model/provider from config.yaml instead of nonexistent _current_model
 0248f20f0 docs: update hermes-patches.md branch description
