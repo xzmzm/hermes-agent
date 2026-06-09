@@ -198,7 +198,7 @@ api_key_present= True
 
 ### Patch #15 — `/quota` 通过本地 aichatproxy 查询当前模型额度
 
-**Commit:** `f1f85b5b1` + `1439e318e`（修复 gateway /quota 读取 config.yaml）
+**Commit:** `f1f85b5b1` + `1439e318e`（修复 gateway /quota 读取 config.yaml）+ `b78979a16`（gateway 透传 runtime credentials）
 **Files:** `hermes_cli/commands.py`, `hermes_cli/quota.py`, `cli.py`, `gateway/run.py`, `gateway/slash_commands.py`
 **Local service:** `http://localhost:8000/api/quota`（由 `~/prj/aichatproxy` 提供）
 
@@ -227,6 +227,7 @@ api_key_present= True
 6. Xiaomi MiMo 的 console quota API 在 `/api/v1/tokenPlan/usage`，不是 SPA fallback `/tokenPlan/usage`；仅用 Token Plan API key 会返回 401，需要 web-login cookie。
 7. 修改 aichatproxy 后不要随意重启服务；当前 Telegram 对话可能正走这个 proxy。若需要重启，告知用户，由用户自行操作。可用离线导入 + monkeypatch 验证 route/endpoint 选择。
 8. Z.ai 的 `reset_at` 是毫秒级时间戳（如 `1781338292982`），渲染时需转成本地可读时间；Limits 详情里的 `reset_at` / `used_percent` 也要格式化，不能直接输出原始数字。
+9. Gateway `/quota` 不能只读 config.yaml 后裸调 aichatproxy：Codex route 通常 `api_key` 为空，必须从 per-session `/model` override 或 `resolve_runtime_provider()` 取 fresh OAuth Bearer token，并作为 `api_key` 传给 `fetch_quota_async()`。否则 aichatproxy `/api/quota` 会返回 HTTP 400：`No API key/Bearer token available for selected route`。
 
 ---
 
@@ -324,6 +325,7 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 ## Commit history
 
 ```
+b78979a16 fix: forward runtime credentials in gateway quota command
 1439e318e fix: gateway /quota reads model/provider from config.yaml instead of nonexistent _current_model
 0248f20f0 docs: update hermes-patches.md branch description
 774bb12be refactor: restore clean upstream run.py/cli.py, re-apply only minimal patches
@@ -352,4 +354,4 @@ ffb05ad7e patch-4: background review send full text + tool summary
 30edebfed patch-1: title generation reasoning budget retry
 ```
 
-*最后更新: 2026-06-08（rebase on `c3055d618` v0.16.0, 10 patches + fix/refactor + quota feature, 6 discarded）*
+*最后更新: 2026-06-09（rebase on `c3055d618` v0.16.0, 10 patches + fix/refactor + quota feature, 6 discarded）*
