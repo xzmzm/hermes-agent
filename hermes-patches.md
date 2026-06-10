@@ -13,10 +13,10 @@
 
 ---
 
-## Active Patches (10 patch commits + fix/refactor commits + quota feature commits + docs on `local-patches`)
+## Active Patches (13 numbered patch entries + fix/refactor commits + quota feature commits + docs on `local-patches`)
 
 Rebased on upstream `c3055d618` (v0.16.0, tag `v2026.6.5`, +919 commits from v0.15.1)。
-每个 patch 修改不同文件，零文件重叠。`gateway/run.py` 和 `cli.py` 仅含上游代码 + 3 行 quota dispatcher。
+每个 patch 尽量保持独立；`gateway/run.py` 目前含 quota dispatcher + Patch #18 auto-TTS dedup 修复。
 
 ### Patch #1 — 对话标题 reasoning budget retry
 
@@ -300,6 +300,52 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 
 ---
 
+### Patch #18 — `/voice tts` auto-TTS 去重只看当前轮
+
+**Commit:** `ddbd9491e`
+**Files:** `gateway/run.py`, `tests/gateway/test_voice_command.py`
+
+#### 问题
+
+`/voice tts` 会把当前 chat 的 voice mode 设为 `all`，文案为：
+
+```text
+Auto-TTS enabled.
+All replies will include a voice message.
+```
+
+但 `GatewayRunner._should_send_voice_reply()` 的 dedup 逻辑扫描完整 `agent_messages` 历史：只要历史任意一轮 assistant 曾调用过 `text_to_speech` tool，之后所有普通文字回复都会被误判为“本轮已手动 TTS”，从而永久跳过自动语音。
+
+#### 修复
+
+将 `agent_result["history_offset"]` 传入 `_should_send_voice_reply()`，并在检查 `text_to_speech` tool calls 时只扫描当前轮消息切片：
+
+```diff
++        current_turn_messages = (
++            agent_messages[history_offset:]
++            if history_offset and len(agent_messages) >= history_offset
++            else agent_messages
++        )
+...
+-            for msg in agent_messages
++            for msg in current_turn_messages
+```
+
+#### 语义
+
+- 当前轮 agent 手动调用 `text_to_speech` → 自动 TTS 跳过，避免重复音频。
+- 历史轮次曾调用 `text_to_speech` → 不影响当前轮 `/voice tts`。
+- 与同文件中媒体自动追加使用 `history_offset` 只处理当前轮的做法保持一致。
+
+#### 验证
+
+```text
+python -m pytest tests/gateway/test_voice_command.py::TestAutoVoiceReply -q -o 'addopts='
+13 passed in 0.94s
+```
+
+---
+
 ## Discarded Patches (upstream 已实现或更好)
 
 | 旧 # | 描述 | 原因 |
@@ -325,7 +371,7 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 | Branch | 用途 |
 |--------|------|
 | `main` | 上游最新 `c3055d618` (v0.16.0 / v2026.6.5)，不做修改 |
-| `local-patches` | 10 patch commits + quota feature + refactor commits + docs，基于最新 main |
+| `local-patches` | 13 numbered patch entries + quota feature + refactor/fix commits + docs，基于最新 main |
 | `local-patches-archive` | 完整旧历史（27 commits，含废弃的 pre-v0.14 commits） |
 | Tag `local-patches-pre-update-20260608` | v0.16.0 rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-update-20260530` | v0.15.1 rebase 之前的 local-patches 快照 |
@@ -337,6 +383,7 @@ Rebase 时 `class GatewayRunner:` 丢失了上游新增的 `(GatewayKanbanWatche
 ## Commit history
 
 ```
+ddbd9491e patch-18: scope auto-tts dedup to current turn
 6299f299a patch-17: pass config-resolved base_url to fetch_models() for /model picker
 6678b81a0 fix: resolve explicit quota model credentials
 b78979a16 fix: forward runtime credentials in gateway quota command
@@ -368,4 +415,4 @@ ffb05ad7e patch-4: background review send full text + tool summary
 30edebfed patch-1: title generation reasoning budget retry
 ```
 
-*最后更新: 2026-06-09（rebase on `c3055d618` v0.16.0, 11 patches + fix/refactor + quota feature, 6 discarded）*
+*最后更新: 2026-06-10（rebase on `c3055d618` v0.16.0, 13 numbered patches + fix/refactor + quota feature, 6 discarded）*
