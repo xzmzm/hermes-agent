@@ -8974,9 +8974,18 @@ class GatewayRunner(GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin):
                 last_prompt_tokens=agent_result.get("last_prompt_tokens", 0),
             )
 
-            # Auto voice reply: send TTS audio before the text response
+            # Auto voice reply: send TTS audio before the text response.
+            # Pass the current-turn slice boundary so dedup only considers TTS
+            # tool calls made in this turn, not stale TTS calls from history.
             _already_sent = bool(agent_result.get("already_sent"))
-            if self._should_send_voice_reply(event, response, agent_messages, already_sent=_already_sent):
+            _voice_history_offset = agent_result.get("history_offset", len(history))
+            if self._should_send_voice_reply(
+                event,
+                response,
+                agent_messages,
+                already_sent=_already_sent,
+                history_offset=_voice_history_offset,
+            ):
                 await self._send_voice_reply(event, response)
 
             # If streaming already delivered the response, extract and
@@ -9774,13 +9783,14 @@ class GatewayRunner(GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin):
         response: str,
         agent_messages: list,
         already_sent: bool = False,
+        history_offset: int = 0,
     ) -> bool:
         """Decide whether the runner should send a TTS voice reply.
 
         Returns False when:
         - voice_mode is off for this chat
         - response is empty or an error
-        - agent already called text_to_speech tool (dedup)
+        - agent already called text_to_speech tool in the current turn (dedup)
         - voice input and base adapter auto-TTS already handled it (skip_double)
           UNLESS streaming already consumed the response (already_sent=True),
           in which case the base adapter won't have text for auto-TTS so the
@@ -9800,14 +9810,22 @@ class GatewayRunner(GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin):
         if not should:
             return False
 
-        # Dedup: agent already called TTS tool
+        # Dedup: agent already called TTS tool in this turn.  ``agent_messages``
+        # includes replayed history, so honor the same history_offset boundary
+        # used by transcript/media handling; otherwise one old TTS call suppresses
+        # /voice tts forever in that session.
+        current_turn_messages = (
+            agent_messages[history_offset:]
+            if history_offset and len(agent_messages) >= history_offset
+            else agent_messages
+        )
         has_agent_tts = any(
             msg.get("role") == "assistant"
             and any(
                 tc.get("function", {}).get("name") == "text_to_speech"
                 for tc in (msg.get("tool_calls") or [])
             )
-            for msg in agent_messages
+            for msg in current_turn_messages
         )
         if has_agent_tts:
             return False

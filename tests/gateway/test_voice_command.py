@@ -287,7 +287,7 @@ class TestAutoVoiceReply:
         return _make_runner(tmp_path)
 
     def _call(self, runner, voice_mode, message_type, agent_messages=None,
-              response="Hello!", in_voice_channel=False):
+              response="Hello!", in_voice_channel=False, history_offset=0):
         """Call real _should_send_voice_reply on a GatewayRunner instance."""
         chat_id = "123"
         if voice_mode != "off":
@@ -304,7 +304,7 @@ class TestAutoVoiceReply:
             runner.adapters[event.source.platform] = mock_adapter
 
         return runner._should_send_voice_reply(
-            event, response, agent_messages or []
+            event, response, agent_messages or [], history_offset=history_offset
         )
 
     # -- Full platform x input x mode matrix --------------------------------
@@ -390,6 +390,28 @@ class TestAutoVoiceReply:
             }],
         }]
         assert self._call(runner, "all", MessageType.TEXT, agent_messages=messages) is False
+
+    def test_dedup_ignores_historical_tts_tool_calls(self, runner):
+        """A previous-turn TTS tool call must not suppress /voice tts forever."""
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "old_call",
+                    "type": "function",
+                    "function": {"name": "text_to_speech", "arguments": "{}"},
+                }],
+            },
+            {"role": "user", "content": "current prompt"},
+            {"role": "assistant", "content": "current reply"},
+        ]
+        assert self._call(
+            runner,
+            "all",
+            MessageType.TEXT,
+            agent_messages=messages,
+            history_offset=1,
+        ) is True
 
     def test_no_dedup_for_other_tools(self, runner):
         messages = [{
