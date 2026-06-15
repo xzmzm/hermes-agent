@@ -107,6 +107,21 @@ from utils import base_url_host_matches, base_url_hostname, model_forces_max_com
 logger = logging.getLogger(__name__)
 
 
+def _get_hermes_default_headers() -> dict:
+    """Read HERMES_DEFAULT_HEADERS from env, or return RooCode defaults."""
+    _raw = os.getenv("HERMES_DEFAULT_HEADERS")
+    if _raw:
+        try:
+            return json.loads(_raw)
+        except json.JSONDecodeError:
+            logger.warning("HERMES_DEFAULT_HEADERS is not valid JSON, skipping")
+    return {
+        "User-Agent": "RooCode/3.53.0",
+        "http-referer": "https://github.com/RooVetGit/Roo-Cline",
+        "x-title": "Roo Code",
+    }
+
+
 def _safe_isinstance(obj: Any, maybe_type: Any) -> bool:
     """Return False instead of raising when a patched symbol is not a type."""
     try:
@@ -1488,6 +1503,8 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
                         extra["default_headers"] = dict(_ph_aux.default_headers)
                 except Exception:
                     pass
+            if "default_headers" not in extra:
+                extra["default_headers"] = _get_hermes_default_headers()
             _merged_aux = _apply_user_default_headers(extra.get("default_headers"))
             if _merged_aux:
                 extra["default_headers"] = _merged_aux
@@ -1528,6 +1545,8 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
                     extra["default_headers"] = dict(_ph_aux2.default_headers)
             except Exception:
                 pass
+        if "default_headers" not in extra:
+            extra["default_headers"] = _get_hermes_default_headers()
         _merged_aux2 = _apply_user_default_headers(extra.get("default_headers"))
         if _merged_aux2:
             extra["default_headers"] = _merged_aux2
@@ -1921,11 +1940,8 @@ def _try_custom_endpoint() -> Tuple[Optional[Any], Optional[str]]:
     logger.debug("Auxiliary client: custom endpoint (%s, api_mode=%s)", model, custom_mode or "chat_completions")
     _clean_base, _dq = _extract_url_query_params(custom_base)
     _extra = {"default_query": _dq} if _dq else {}
-    # User-configured model.default_headers override the SDK's identifying
-    # headers (User-Agent: OpenAI/Python ..., X-Stainless-*) on this custom
-    # endpoint's auxiliary calls too — matching the main agent client so the
-    # whole session reaches a gateway/WAF that rejects the SDK fingerprint. (#40033)
-    _custom_headers = _apply_user_default_headers(None)
+    _extra["default_headers"] = _get_hermes_default_headers()
+    _custom_headers = _apply_user_default_headers(_extra["default_headers"])
     if _custom_headers:
         _extra["default_headers"] = _custom_headers
     if custom_mode == "codex_responses":
@@ -3316,6 +3332,8 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
                     async_kwargs["default_headers"] = dict(_ph_async.default_headers)
         except Exception:
             pass
+    if "default_headers" not in async_kwargs:
+        async_kwargs["default_headers"] = _get_hermes_default_headers()
     _merged_async = _apply_user_default_headers(async_kwargs.get("default_headers"))
     if _merged_async:
         async_kwargs["default_headers"] = _merged_async
@@ -3861,6 +3879,8 @@ def resolve_provider_client(
                     headers.update(_ph_main.default_headers)
             except Exception:
                 pass
+        if not headers:
+            headers = _get_hermes_default_headers()
         _merged_main = _apply_user_default_headers(headers)
         if _merged_main:
             headers = _merged_main
@@ -4395,7 +4415,8 @@ def _refresh_nous_auxiliary_client(
         return None, model
 
     fresh_key, fresh_base_url = runtime
-    sync_client = OpenAI(api_key=fresh_key, base_url=fresh_base_url)
+    sync_client = OpenAI(api_key=fresh_key, base_url=fresh_base_url,
+                         default_headers=_get_hermes_default_headers())
     final_model = model
 
     current_loop = None

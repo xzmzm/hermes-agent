@@ -1541,6 +1541,78 @@ class GatewaySlashCommandsMixin:
         prefix = "✓" if result.success else "✗"
         return f"{prefix} {result.message}"
 
+    async def _handle_quota_command(self, event: MessageEvent) -> str:
+        """Handle /quota by querying local aichatproxy for the current model."""
+        from hermes_cli.quota import (
+            fetch_quota_async,
+            render_quota_response,
+            resolve_quota_target,
+        )
+        from gateway.run import _load_gateway_config, _resolve_gateway_model
+
+        raw_args = event.get_command_args().strip()
+        cfg = _load_gateway_config()
+        model_cfg = cfg.get("model", {})
+        model = raw_args or _resolve_gateway_model(cfg)
+        provider = (model_cfg.get("provider") if isinstance(model_cfg, dict) else None) or ""
+        api_key = None
+
+        # Mirror normal message turns: a per-session /model override is the
+        # active model/provider for this chat, even when config.yaml still says
+        # something else.
+        try:
+            source = self._normalize_source_for_session_key(event.source)
+            session_key = self._session_key_for_source(source)
+            override = self._session_model_overrides.get(session_key, {})
+            if override:
+                if not raw_args:
+                    model = override.get("model", model)
+                provider = override.get("provider", provider) or provider
+                api_key = override.get("api_key") or None
+        except Exception:
+            logger.debug("could not resolve /quota session model override", exc_info=True)
+
+        # Gateway /quota has no live CLI object to call _ensure_runtime_credentials().
+        # Resolve the runtime provider directly so OAuth-backed routes (notably
+        # openai-codex with a blank aichatproxy route key) can pass the fresh
+        # Bearer token through to /api/quota.
+        if not api_key:
+            try:
+                from hermes_cli.runtime_provider import resolve_runtime_provider
+
+                runtime = resolve_runtime_provider()
+                api_key_val = runtime.get("api_key")
+                if isinstance(api_key_val, str) and api_key_val:
+                    api_key = api_key_val
+                provider = provider or runtime.get("provider") or ""
+                if not model:
+                    model = runtime.get("model") or model
+            except Exception:
+                logger.debug("could not resolve runtime credentials for /quota", exc_info=True)
+
+        target = resolve_quota_target(
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            explicit_model=bool(raw_args),
+        )
+        model = str(target.get("model") or model)
+        provider = str(target.get("provider") or provider)
+        api_key = target.get("api_key") if isinstance(target.get("api_key"), str) else None
+
+        try:
+            data = await fetch_quota_async(
+                model=model,
+                provider=provider,
+                api_key=api_key,
+            )
+        except Exception as exc:
+            return (
+                f"Failed to fetch quota: {exc}\n\n"
+                "Is aichatproxy running on `localhost:8000`?"
+            )
+        return render_quota_response(data)
+
     async def _handle_personality_command(self, event: MessageEvent) -> str:
         """Handle /personality command - list or set a personality."""
         from gateway.run import _hermes_home, _load_gateway_config
@@ -2788,7 +2860,7 @@ class GatewaySlashCommandsMixin:
             else:
                 return t("gateway.title.current_no_title", session_id=session_id)
 
-    async def _handle_resume_command(self, event: MessageEvent) -> str:
+    async def _handle_resume_command(self, event: MessageEvent) -> Optional[str]:
         """Handle /resume command — list or switch to a previous session."""
         if not self._session_db:
             from hermes_state import format_session_db_unavailable
@@ -2846,7 +2918,26 @@ class GatewaySlashCommandsMixin:
                     preview_part = t("gateway.resume.list_preview_suffix", preview=preview) if preview else ""
                     lines.append(t("gateway.resume.list_item_numbered", index=idx, title=title, preview_part=preview_part))
                 lines.append(t("gateway.resume.list_footer_numbered"))
-                return "\n".join(lines)
+                listing_text = "\n".join(lines)
+
+                # On Telegram, try to send with inline keyboard buttons
+                if source.platform.value == "telegram":
+                    try:
+                        adapter = self.adapters.get(source.platform)
+                        if adapter and hasattr(adapter, "send_resume_picker"):
+                            metadata = {"thread_id": source.thread_id} if getattr(source, "thread_id", None) else None
+                            await adapter.send_resume_picker(
+                                chat_id=source.chat_id,
+                                sessions=titled[:10],
+                                listing_text=listing_text,
+                                metadata=metadata,
+                            )
+                            return None  # Already sent, don't double-send
+                    except Exception as e:
+                        logger.debug("Failed to send resume picker with keyboard: %s", e)
+                        # Fall through to text-only response
+
+                return listing_text
             except Exception as e:
                 logger.debug("Failed to list titled sessions: %s", e)
                 return t("gateway.resume.list_failed", error=e)

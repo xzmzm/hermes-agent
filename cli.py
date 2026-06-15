@@ -7426,6 +7426,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         elif canonical == "gquota":
             self._handle_gquota_command(cmd_original)
 
+        elif canonical == "quota":
+            self._handle_quota_command(cmd_original)
+
         elif canonical == "personality":
             # Use original case (handler lowercases the personality name itself)
             self._handle_personality_command(cmd_original)
