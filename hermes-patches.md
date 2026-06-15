@@ -13,7 +13,7 @@
 
 ---
 
-## Active Patches (13 numbered patch entries + fix/refactor commits + quota feature commits + docs on `local-patches`)
+## Active Patches (14 numbered patch entries + fix/refactor commits + quota feature commits + docs on `local-patches`)
 
 Rebased on upstream `60cc42e38`（v0.16.0+，+754 commits from `c3055d618` v0.16.0）。净 diff 经 `git apply --3way` 贴成 squashed commit `cd7c8ae37`。
 每个 patch 尽量保持独立；`gateway/run.py` 目前含 quota dispatcher + Patch #18 auto-TTS dedup 修复。
@@ -364,6 +364,41 @@ python -m pytest tests/gateway/test_voice_command.py::TestAutoVoiceReply -q -o '
 - ~~`_escape_title_mdv2()` + `_MDV2_ESCAPE_RE` in `gateway/run.py`~~ — v0.16.0 rebase 后 run.py 恢复为干净上游版，此条过时。
 - **v0.16.0 rebase**：从 `gateway/run.py` 删除 40 个冗余 `_handle_*` 方法（上游已迁移到 mixin），从 `cli.py` 删除 33 个（同理）。见 refactor commit `774bb12be`。
 
+### Patch #19 — cron-session 审批检查免疫 os.environ 污染
+
+**Commit:** `330bc8bcb`
+**File:** `tools/approval.py`
+
+#### 问题
+
+`cron/scheduler.py:1497` 用 `os.environ["HERMES_CRON_SESSION"] = "1"` 标记 cron 会话——这是**进程级**变量。当 scheduler 内嵌于 gateway 进程（我们的部署方式），任何 cron 任务一跑，此标记便永久烙进 gateway，此后**每一条**正常对话的 agent 都被 approval.py（4 处检查）误判为 cron 会话，导致 `execute_code` 及 dangerous command 被 BLOCKED，直到重启 gateway。
+
+上游注释自己承认「persists for the lifetime of the scheduler process」，预设 scheduler 独立进程；同进程部署下此预设崩溃。上游至今未修。
+
+#### 修复
+
+新增 `_is_active_cron_session()` 辅助函数，将 4 处 `env_var_enabled("HERMES_CRON_SESSION")` 替换之。判定逻辑：cron 标记**且**无入站 platform（真 cron job 的 platform 被 scheduler 设空，正常对话必带 telegram/discord 等）。`_get_session_platform()` 读 ContextVar，不受 os.environ 污染。
+
+```python
+def _is_active_cron_session() -> bool:
+    if not env_var_enabled("HERMES_CRON_SESSION"):
+        return False
+    return not _get_session_platform()
+```
+
+#### 四场景验证
+
+| 场景 | CRON 标记 | platform | 结果 | 期望 |
+|------|-----------|----------|------|------|
+| 正常对话(被污染) | 1 | telegram | False | ✓ 不再误拦 |
+| 真 cron job | 1 | (空) | True | ✓ 仍识别 |
+| CLI/无标记 | 未设 | telegram | False | ✓ |
+| 正常对话(无污染) | 未设 | (空) | False | ✓ |
+
+#### 备注
+
+为什么不用 session_id 前缀（`cron_*`）：scheduler 调 `set_session_vars(platform="", ...)` 时把 `_SESSION_ID` ContextVar 无条件设空（L31），阻断了 os.environ fallback，导致 session_id 信号在真 cron 内失效。platform 是唯一可靠的并发安全区分信号。
+
 ---
 
 ## Branch structure
@@ -371,7 +406,7 @@ python -m pytest tests/gateway/test_voice_command.py::TestAutoVoiceReply -q -o '
 | Branch | 用途 |
 |--------|------|
 | `main` | 上游最新 `60cc42e38`（v0.16.0+，+754 from `c3055d618`），不做修改 |
-| `local-patches` | 13 numbered patch entries + quota feature + refactor/fix commits + docs，基于最新 main |
+| `local-patches` | 14 numbered patch entries + quota feature + refactor/fix commits + docs，基于最新 main |
 | `local-patches-archive` | 完整旧历史（27 commits，含废弃的 pre-v0.14 commits） |
 | Tag `local-patches-pre-update-20260608` | v0.16.0 rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-update-20260530` | v0.15.1 rebase 之前的 local-patches 快照 |
@@ -385,7 +420,9 @@ python -m pytest tests/gateway/test_voice_command.py::TestAutoVoiceReply -q -o '
 2026-06-16: `local-patches` 合并为单个 squashed commit，以 `git apply --3way` 重贴到上游 `60cc42e38`（+754 commits）。逐 commit rebase 在 patch-8 (`gateway/run.py`) 触发 8 处冲突且会连锁（其 inline-keyboard 逻辑早已迁至 `slash_commands.py`），squashed reapply 一步成型，仅剩 1 处注释冲突需手解。
 
 ```
-cd7c8ae37 chore: reapply local patches onto upstream 60cc42e38   ← 当前 local-patches HEAD
+330bc8bcb patch-19: immune cron-session approval checks to os.environ pollution
+a9c87ebdc docs: update hermes-patches.md for 2026-06-16 squashed reapply on 60cc42e38
+cd7c8ae37 chore: reapply local patches onto upstream 60cc42e38
 60cc42e38 fix(inventory): deduplicate models... (upstream base)
 ```
 
@@ -393,4 +430,4 @@ cd7c8ae37 chore: reapply local patches onto upstream 60cc42e38   ← 当前 loca
 - tag `local-patches-pre-update-20260616`
 - fork 分支 `local-patches-archive`
 
-*最后更新: 2026-06-16（squashed reapply on `60cc42e38` via `git apply --3way`，commit `cd7c8ae37`；13 numbered patches + raw-error-detail，5 discarded；pre-update 快照 tag `local-patches-pre-update-20260616`）*
+*最后更新: 2026-06-16（patch-19 cron 污染免疫，commit `330bc8bcb`；squashed reapply on `60cc42e38` via `git apply --3way`，commit `cd7c8ae37`；14 numbered patches + raw-error-detail，5 discarded；pre-update 快照 tag `local-patches-pre-update-20260616`）*
