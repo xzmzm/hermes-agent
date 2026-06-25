@@ -13,7 +13,7 @@
 
 ---
 
-## Active Patches (14 numbered patch entries + fix/refactor commits + quota feature commits + docs on `local-patches`)
+## Active Patches (15 numbered patch entries + fix/refactor commits + quota feature commits + docs on `local-patches`)
 
 Rebased on upstream `60cc42e38`（v0.16.0+，+754 commits from `c3055d618` v0.16.0）。净 diff 经 `git apply --3way` 贴成 squashed commit `cd7c8ae37`。
 每个 patch 尽量保持独立；`gateway/run.py` 目前含 quota dispatcher + Patch #18 auto-TTS dedup 修复。
@@ -346,6 +346,60 @@ python -m pytest tests/gateway/test_voice_command.py::TestAutoVoiceReply -q -o '
 
 ---
 
+### Patch #20 — Auxiliary vision openai-codex 保留 OAuth auth + base_url 覆盖
+
+**Commit:** `5328d40ea`
+**File:** `agent/auxiliary_client.py`（4 处）
+**Env:** `HERMES_CODEX_BASE_URL`
+
+#### 问题
+
+`auxiliary.vision` 配置 `provider: openai-codex` + `base_url: http://localhost:8000/openai/v1` 时，请求丢失 OAuth token 且 base_url 未生效，aichatproxy 收到的 header 为 `authorization: Bearer no-key-required`。
+
+根因是两层 bug：
+
+1. **`_resolve_task_provider_model` L4759**：当显式传入 `base_url` 参数时，无论 `provider` 是什么都强制返回 `"custom"` → 走 custom endpoint 路径 → `api_key = "no-key-required"`
+2. **`resolve_provider_client("openai-codex")`**：忽略 `explicit_base_url` 参数，`_build_codex_client()` 硬编码用 `chatgpt.com`
+3. **`_CODEX_AUX_BASE_URL`**：硬编码 `https://chatgpt.com/backend-api/codex`，不读 `HERMES_CODEX_BASE_URL`
+4. **`_build_codex_client()`**：无 `base_url_override` 参数
+
+#### 修复
+
+```diff
+# 1. _CODEX_AUX_BASE_URL 读 env
+-_CODEX_AUX_BASE_URL = "https://chatgpt.com/backend-api/codex"
++_CODEX_AUX_BASE_URL = os.getenv("HERMES_CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex").strip().rstrip("/")
+
+# 2. _resolve_task_provider_model: known provider + base_url 保留 provider
+ if base_url:
++    if provider and provider not in {"", "auto", "custom"}:
++        return provider, resolved_model, base_url, api_key, resolved_api_mode
+     return "custom", resolved_model, base_url, api_key, resolved_api_mode
+
+# 3. resolve_provider_client: 传 explicit_base_url
++    _codex_base = _to_openai_base_url(explicit_base_url).strip() if explicit_base_url else None
++    client, default = _build_codex_client(model, base_url_override=_codex_base)
+-    client, default = _build_codex_client(model)
+
+# 4. _build_codex_client: 新增 base_url_override kwarg
+-def _build_codex_client(model: str) -> ...:
++def _build_codex_client(model: str, *, base_url_override: Optional[str] = None) -> ...:
+```
+
+#### 验证
+
+```text
+provider=openai-codex, base_url=http://localhost:8000/openai/v1, api_key=eyJhbG... (OAuth JWT)
+```
+
+aichatproxy 收到正确 OAuth token + localhost base_url，vision analyze 正常返回。
+
+#### 注意
+
+此 patch 与 Patch #14（`runtime_provider.py` 主对话 path）互补。#14 修的是 `hermes_cli/runtime_provider.py` 中的主聊天 credential 解析；#20 修的是 `agent/auxiliary_client.py` 中的 auxiliary/vision 解析链。两者共同确保 `HERMES_CODEX_BASE_URL` 在所有 Codex 请求路径中生效。
+
+---
+
 ## Discarded Patches (upstream 已实现或更好)
 
 | 旧 # | 描述 | 原因 |
@@ -406,7 +460,7 @@ def _is_active_cron_session() -> bool:
 | Branch | 用途 |
 |--------|------|
 | `main` | 上游最新 `60cc42e38`（v0.16.0+，+754 from `c3055d618`），不做修改 |
-| `local-patches` | 14 numbered patch entries + quota feature + refactor/fix commits + docs，基于最新 main |
+| `local-patches` | 15 numbered patch entries + quota feature + refactor/fix commits + docs，基于最新 main |
 | `local-patches-archive` | 完整旧历史（27 commits，含废弃的 pre-v0.14 commits） |
 | Tag `local-patches-pre-update-20260608` | v0.16.0 rebase 之前的 local-patches 快照 |
 | Tag `local-patches-pre-update-20260530` | v0.15.1 rebase 之前的 local-patches 快照 |
@@ -430,4 +484,4 @@ cd7c8ae37 chore: reapply local patches onto upstream 60cc42e38
 - tag `local-patches-pre-update-20260616`
 - fork 分支 `local-patches-archive`
 
-*最后更新: 2026-06-16（patch-19 cron 污染免疫，commit `330bc8bcb`；squashed reapply on `60cc42e38` via `git apply --3way`，commit `cd7c8ae37`；14 numbered patches + raw-error-detail，5 discarded；pre-update 快照 tag `local-patches-pre-update-20260616`）*
+*最后更新: 2026-06-25（patch-20 aux vision Codex base_url+auth，commit `5328d40ea`；squashed reapply on `60cc42e38` via `git apply --3way`，commit `cd7c8ae37`；15 numbered patches + raw-error-detail，5 discarded；pre-update 快照 tag `local-patches-pre-update-20260616`）*
