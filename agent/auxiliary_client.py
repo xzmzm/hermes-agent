@@ -391,6 +391,28 @@ _OR_HEADERS_BASE = {
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
+def _get_hermes_default_headers() -> dict:
+    """Read HERMES_DEFAULT_HEADERS env var (JSON dict), fallback RooCode UA.
+
+    Patch #13: shared by _apply_user_default_headers fallback and
+    agent_init.py (patch #2).
+    """
+    _raw = os.environ.get("HERMES_DEFAULT_HEADERS", "").strip()
+    if _raw:
+        try:
+            import json
+            parsed = json.loads(_raw)
+            if isinstance(parsed, dict):
+                return {str(k): str(v) for k, v in parsed.items()}
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return {
+        "http-referer": "https://github.com/RooVetGit/Roo-Cline",
+        "User-Agent": "RooCode/3.53.0",
+        "x-title": "Roo Code",
+    }
+
+
 def _apply_user_default_headers(headers: dict | None) -> dict | None:
     """Merge user-configured ``model.default_headers`` onto resolved headers.
 
@@ -404,20 +426,28 @@ def _apply_user_default_headers(headers: dict | None) -> dict | None:
 
     Returns the merged dict, or the original ``headers`` (possibly ``None``)
     when nothing is configured. No allocation when there are no overrides.
+
+    Patch #13: when both user config and caller-provided headers are None,
+    falls back to HERMES_DEFAULT_HEADERS env var / RooCode UA, so that
+    ALL auxiliary client paths (20+ OpenAI() sites) inherit custom headers
+    without per-site patching.
     """
     try:
         from hermes_cli.config import cfg_get, load_config
         user_headers = cfg_get(load_config(), "model", "default_headers")
     except Exception:
+        user_headers = None
+    if isinstance(user_headers, dict) and user_headers:
+        merged = dict(headers or {})
+        for key, value in user_headers.items():
+            if value is None:
+                continue
+            merged[str(key)] = str(value)
+        return merged or headers
+    # Patch #13: no user config — fallback to env RooCode UA
+    if headers is not None:
         return headers
-    if not isinstance(user_headers, dict) or not user_headers:
-        return headers
-    merged = dict(headers or {})
-    for key, value in user_headers.items():
-        if value is None:
-            continue
-        merged[str(key)] = str(value)
-    return merged or headers
+    return _get_hermes_default_headers()
 
 
 def build_or_headers(or_config: dict | None = None) -> dict:
