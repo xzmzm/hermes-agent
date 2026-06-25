@@ -3154,7 +3154,27 @@ class GatewaySlashCommandsMixin:
                     preview_part = t("gateway.resume.list_preview_suffix", preview=preview) if preview else ""
                     lines.append(t("gateway.resume.list_item_numbered", index=idx, title=title, preview_part=preview_part))
                 lines.append(t("gateway.resume.list_footer_numbered"))
-                return "\n".join(lines)
+                listing_text = "\n".join(lines)
+
+                # Telegram can render the same numbered list with inline
+                # keyboard buttons; normal text fallback remains below for all
+                # other platforms or if the adapter send fails.
+                if getattr(source.platform, "value", None) == "telegram":
+                    try:
+                        adapter = self.adapters.get(source.platform)
+                        if adapter and hasattr(adapter, "send_resume_picker"):
+                            metadata = {"thread_id": source.thread_id} if getattr(source, "thread_id", None) else None
+                            await adapter.send_resume_picker(
+                                chat_id=source.chat_id,
+                                sessions=titled[:10],
+                                listing_text=listing_text,
+                                metadata=metadata,
+                            )
+                            return None
+                    except Exception as e:
+                        logger.debug("Failed to send resume picker with keyboard: %s", e)
+
+                return listing_text
             except Exception as e:
                 logger.debug("Failed to list titled sessions: %s", e)
                 return t("gateway.resume.list_failed", error=e)

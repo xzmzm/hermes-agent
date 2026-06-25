@@ -3758,6 +3758,81 @@ class TelegramAdapter(BasePlatformAdapter):
             logger.warning("[%s] send_clarify failed: %s", self.name, e)
             return SendResult(success=False, error=str(e))
 
+    async def send_resume_picker(
+        self,
+        chat_id: str,
+        sessions: list,
+        listing_text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send session list with numbered text + inline keyboard buttons."""
+        if not self._bot:
+            return SendResult(success=False, error="Not connected")
+
+        try:
+            buttons: list = []
+            for i, session in enumerate(sessions, 1):
+                title = str(session.get("title") or "Untitled")
+                label = title if len(title) <= 40 else title[:37] + "..."
+                buttons.append(
+                    InlineKeyboardButton(
+                        f"{i}. {label}",
+                        callback_data=f"resume:{session['id']}",
+                    )
+                )
+            rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+            keyboard = InlineKeyboardMarkup(rows)
+
+            thread_id = self._metadata_thread_id(metadata)
+            reply_to_id = self._reply_to_message_id_for_send(None, metadata)
+            kwargs: Dict[str, Any] = {
+                "chat_id": int(chat_id),
+                "text": self.format_message(listing_text),
+                "parse_mode": ParseMode.MARKDOWN_V2,
+                "reply_markup": keyboard,
+                "reply_to_message_id": reply_to_id,
+                **self._link_preview_kwargs(),
+            }
+            kwargs.update(
+                self._thread_kwargs_for_send(
+                    chat_id,
+                    thread_id,
+                    metadata,
+                    reply_to_message_id=reply_to_id,
+                )
+            )
+            msg = await self._send_message_with_thread_fallback(**kwargs)
+            return SendResult(success=True, message_id=str(msg.message_id))
+        except Exception as e:
+            logger.warning("[%s] send_resume_picker failed: %s", self.name, e)
+            try:
+                thread_id = self._metadata_thread_id(metadata)
+                reply_to_id = self._reply_to_message_id_for_send(None, metadata)
+                kwargs = {
+                    "chat_id": int(chat_id),
+                    "text": _strip_mdv2(listing_text),
+                    "parse_mode": None,
+                    "reply_to_message_id": reply_to_id,
+                    **self._link_preview_kwargs(),
+                }
+                kwargs.update(
+                    self._thread_kwargs_for_send(
+                        chat_id,
+                        thread_id,
+                        metadata,
+                        reply_to_message_id=reply_to_id,
+                    )
+                )
+                msg = await self._send_message_with_thread_fallback(**kwargs)
+                return SendResult(success=True, message_id=str(msg.message_id))
+            except Exception as fallback_err:
+                logger.warning(
+                    "[%s] send_resume_picker fallback failed: %s",
+                    self.name,
+                    fallback_err,
+                )
+                return SendResult(success=False, error=str(e))
+
     async def send_model_picker(
         self,
         chat_id: str,
@@ -4530,6 +4605,83 @@ class TelegramAdapter(BasePlatformAdapter):
                         "Telegram clarify button: resolve_gateway_clarify returned False (id=%s)",
                         clarify_id,
                     )
+            return
+
+        # --- Resume picker callbacks (resume:<session_id>) ---
+        if data.startswith("resume:"):
+            session_id = data.split(":", 1)[1]
+            if not session_id:
+                await query.answer(text="Invalid session.")
+                return
+
+            caller_id = str(getattr(query.from_user, "id", ""))
+            if not self._is_callback_user_authorized(
+                caller_id,
+                chat_id=query_chat_id,
+                chat_type=str(query_chat_type) if query_chat_type is not None else None,
+                thread_id=str(query_thread_id) if query_thread_id is not None else None,
+                user_name=query_user_name,
+            ):
+                await query.answer(text="⛔ You are not authorized.")
+                return
+
+            await query.answer(text="Resuming session…")
+            session_title = session_id
+            try:
+                from hermes_state import SessionDB
+
+                title = SessionDB().get_session_title(session_id)
+                if title:
+                    session_title = title
+            except Exception:
+                pass
+
+            try:
+                await query.edit_message_text(
+                    text=f"↻ Resuming {session_title}…",
+                    parse_mode=None,
+                    reply_markup=None,
+                )
+            except Exception:
+                pass
+
+            try:
+                from gateway.session import SessionSource
+
+                user = query.from_user
+                msg = query_message
+                thread_id = None
+                if msg and getattr(msg, "is_topic_message", False):
+                    thread_id = str(getattr(msg, "message_thread_id", "") or "") or None
+                elif query_thread_id:
+                    thread_id = str(query_thread_id)
+
+                source = SessionSource(
+                    platform=Platform.TELEGRAM,
+                    user_id=str(getattr(user, "id", "")),
+                    chat_id=str(getattr(msg, "chat_id", "") if msg else ""),
+                    user_name=(
+                        getattr(user, "first_name", "")
+                        or getattr(user, "username", "")
+                        or ""
+                    ),
+                    thread_id=thread_id,
+                )
+                event = MessageEvent(
+                    text=f"/resume {session_id}",
+                    source=source,
+                    message_type=MessageType.TEXT,
+                )
+                await self.handle_message(event)
+            except Exception as e:
+                logger.error("Failed to dispatch resume callback: %s", e, exc_info=True)
+                try:
+                    await self._bot.send_message(
+                        chat_id=query_message.chat_id,
+                        text=f"Failed to resume: {e}",
+                    )
+                except Exception:
+                    pass
             return
 
         # --- Update prompt callbacks ---
