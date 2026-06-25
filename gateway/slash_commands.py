@@ -1103,6 +1103,78 @@ class GatewaySlashCommandsMixin:
             getattr(getattr(event, "source", None), "platform", None),
         )
 
+    async def _handle_quota_command(self, event: MessageEvent) -> str:
+        """Handle /quota by querying local aichatproxy for the current model."""
+        from hermes_cli.quota import (
+            fetch_quota_async,
+            render_quota_response,
+            resolve_quota_target,
+        )
+        from gateway.run import _load_gateway_config, _resolve_gateway_model
+
+        raw_args = event.get_command_args().strip()
+        cfg = _load_gateway_config()
+        model_cfg = cfg.get("model", {})
+        model = raw_args or _resolve_gateway_model(cfg)
+        provider = (model_cfg.get("provider") if isinstance(model_cfg, dict) else None) or ""
+        api_key = None
+
+        # Mirror normal message turns: a per-session /model override is the
+        # active model/provider for this chat, even when config.yaml still says
+        # something else.
+        try:
+            source = self._normalize_source_for_session_key(event.source)
+            session_key = self._session_key_for_source(source)
+            override = self._session_model_overrides.get(session_key, {})
+            if override:
+                if not raw_args:
+                    model = override.get("model", model)
+                provider = override.get("provider", provider) or provider
+                api_key = override.get("api_key") or None
+        except Exception:
+            logger.debug("could not resolve /quota session model override", exc_info=True)
+
+        # Gateway /quota has no live CLI object to call _ensure_runtime_credentials().
+        # Resolve the runtime provider directly so OAuth-backed routes (notably
+        # openai-codex with a blank aichatproxy route key) can pass the fresh
+        # Bearer token through to /api/quota.
+        if not api_key:
+            try:
+                from hermes_cli.runtime_provider import resolve_runtime_provider
+
+                runtime = resolve_runtime_provider()
+                api_key_val = runtime.get("api_key")
+                if isinstance(api_key_val, str) and api_key_val:
+                    api_key = api_key_val
+                provider = provider or runtime.get("provider") or ""
+                if not model:
+                    model = runtime.get("model") or model
+            except Exception:
+                logger.debug("could not resolve runtime credentials for /quota", exc_info=True)
+
+        target = resolve_quota_target(
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            explicit_model=bool(raw_args),
+        )
+        model = str(target.get("model") or model)
+        provider = str(target.get("provider") or provider)
+        api_key = target.get("api_key") if isinstance(target.get("api_key"), str) else None
+
+        try:
+            data = await fetch_quota_async(
+                model=model,
+                provider=provider,
+                api_key=api_key,
+            )
+        except Exception as exc:
+            return (
+                f"Failed to fetch quota: {exc}\n\n"
+                "Is aichatproxy running on `localhost:8000`?"
+            )
+        return render_quota_response(data)
+
     async def _handle_model_command(self, event: MessageEvent) -> Optional[str]:
         """Handle /model command — switch model.
 

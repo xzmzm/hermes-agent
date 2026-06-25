@@ -947,6 +947,53 @@ class CLICommandsMixin:
         _cprint(f"  Original session: {parent_session_id}")
         _cprint(f"  Branch session:   {new_session_id}")
 
+    def _handle_quota_command(self, cmd_original: str) -> None:
+        """Show quota for the current model via local aichatproxy."""
+        try:
+            from hermes_cli.quota import fetch_quota, render_quota_response, resolve_quota_target
+        except ImportError as exc:
+            self._console_print(f"  [red]Quota helper unavailable: {exc}[/]")
+            return
+
+        # Resolve/refresh runtime credentials before asking aichatproxy. This
+        # matters for OAuth-backed providers such as openai-codex: Hermes can
+        # have a fresh access token even when the proxy route key is blank/stale.
+        try:
+            if not self._ensure_runtime_credentials():
+                return
+        except Exception as exc:
+            self._console_print(f"  [red]Could not resolve current credentials:[/] {exc}")
+            return
+
+        raw_args = cmd_original.split(None, 1)
+        explicit_model = len(raw_args) > 1 and bool(raw_args[1].strip())
+        model = raw_args[1].strip() if explicit_model else (self.model or "")
+        if not model:
+            self._console_print("  [yellow]No current model configured.[/]")
+            return
+
+        target = resolve_quota_target(
+            model=model,
+            provider=self.provider,
+            api_key=self.api_key if isinstance(self.api_key, str) else None,
+            explicit_model=explicit_model,
+        )
+
+        try:
+            data = fetch_quota(
+                model=str(target.get("model") or model),
+                provider=str(target.get("provider") or self.provider or ""),
+                api_key=target.get("api_key") if isinstance(target.get("api_key"), str) else None,
+            )
+        except Exception as exc:
+            self._console_print(f"  [red]Quota lookup failed:[/] {exc}")
+            self._console_print("  Is aichatproxy running on [bold]localhost:8000[/]?")
+            return
+
+        self._console_print()
+        self._console_print(render_quota_response(data))
+        self._console_print()
+
     def _handle_personality_command(self, cmd: str):
         """Handle the /personality command to set predefined personalities."""
         from cli import save_config_value
