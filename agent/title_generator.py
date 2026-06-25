@@ -88,6 +88,21 @@ def generate_title(
             main_runtime=main_runtime,
         )
         title = (response.choices[0].message.content or "").strip()
+
+        # Retry once with double tokens if content is empty (reasoning budget
+        # exhaustion: finish_reason="length" + content=null).
+        _first_choice = response.choices[0] if response.choices else None
+        if not title and _first_choice and getattr(_first_choice, "finish_reason", None) == "length":
+            logger.debug("Title generation: empty content with finish_reason=length, retrying with max_tokens=1000")
+            response = call_llm(
+                task="title_generation",
+                messages=messages,
+                max_tokens=1000,
+                temperature=0.3,
+                timeout=timeout,
+                main_runtime=main_runtime,
+            )
+            title = (response.choices[0].message.content or "").strip()
         # Clean up: remove quotes, trailing punctuation, prefixes like "Title: "
         title = title.strip('"\'')
         if title.lower().startswith("title:"):
