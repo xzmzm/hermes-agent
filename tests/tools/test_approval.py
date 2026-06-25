@@ -31,6 +31,37 @@ class TestApprovalModeParsing:
             assert _get_approval_mode() == "off"
 
 
+class TestCronEnvPollution:
+    def test_leaked_cron_env_does_not_mask_gateway_platform_context(self, monkeypatch):
+        """A stale process-wide cron flag must not disable real gateway approvals."""
+        from gateway.session_context import set_session_vars
+        from tools import approval as mod
+
+        monkeypatch.setenv("HERMES_CRON_SESSION", "1")
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        tokens = set_session_vars(platform="telegram", source="telegram:123")
+        try:
+            assert mod._is_active_cron_session() is False
+            assert mod._is_gateway_approval_context() is True
+        finally:
+            for token in reversed(tokens):
+                token.var.reset(token)
+
+    def test_real_cron_without_platform_is_not_gateway_context(self, monkeypatch):
+        from gateway.session_context import set_session_vars
+        from tools import approval as mod
+
+        monkeypatch.setenv("HERMES_CRON_SESSION", "1")
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        tokens = set_session_vars(platform="", source="")
+        try:
+            assert mod._is_active_cron_session() is True
+            assert mod._is_gateway_approval_context() is False
+        finally:
+            for token in reversed(tokens):
+                token.var.reset(token)
+
+
 class TestSmartApproval:
     def test_smart_approval_uses_call_llm(self):
         response = SimpleNamespace(

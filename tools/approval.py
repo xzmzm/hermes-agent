@@ -160,7 +160,7 @@ def _is_gateway_approval_context() -> bool:
     fall through to the gateway branch would submit a pending approval
     with no listener and block the job indefinitely.
     """
-    if env_var_enabled("HERMES_CRON_SESSION"):
+    if _is_active_cron_session():
         return False
     if env_var_enabled("HERMES_GATEWAY_SESSION"):
         return True
