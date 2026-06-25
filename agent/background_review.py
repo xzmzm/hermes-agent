@@ -792,15 +792,23 @@ def _run_review_in_thread(
 
         if actions:
             summary = " · ".join(dict.fromkeys(actions))
-            agent._safe_print(
-                f"  💾 Self-improvement review: {summary}"
-            )
+            # Extract the last assistant text response from review for
+            # richer context in the callback (e.g. skill creation rationale).
+            _last_assistant_text = ""
+            for _msg in reversed(review_messages):
+                if (_msg.get("role") == "assistant"
+                        and isinstance(_msg.get("content"), str)
+                        and _msg["content"].strip()):
+                    _last_assistant_text = _msg["content"].strip()
+                    break
+            _callback_msg = f"💾 Self-improvement review: {summary}"
+            if _last_assistant_text:
+                _callback_msg = f"{_callback_msg}\n\n{_last_assistant_text}"
+            agent._safe_print(f"  {_callback_msg}")
             _bg_cb = agent.background_review_callback
             if _bg_cb:
                 try:
-                    _bg_cb(
-                        f"💾 Self-improvement review: {summary}"
-                    )
+                    _bg_cb(_callback_msg)
                 except Exception:
                     pass
 
