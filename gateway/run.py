@@ -10317,7 +10317,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             # Auto voice reply: send TTS audio before the text response
             _already_sent = bool(agent_result.get("already_sent"))
-            if self._should_send_voice_reply(event, response, agent_messages, already_sent=_already_sent):
+            if self._should_send_voice_reply(
+                event, response, agent_messages,
+                already_sent=_already_sent,
+                history_offset=agent_result.get("history_offset", 0),
+            ):
                 await self._send_voice_reply(event, response)
 
             # If streaming already delivered the response, extract and
@@ -11209,6 +11213,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         response: str,
         agent_messages: list,
         already_sent: bool = False,
+        history_offset: int = 0,
     ) -> bool:
         """Decide whether the runner should send a TTS voice reply.
 
@@ -11221,7 +11226,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
           in which case the base adapter won't have text for auto-TTS so the
           runner must handle it.
         """
-        if not response or response.startswith("Error:"):
+        if not response or response.startswith(("Error:", "error:")):
             return False
 
         chat_id = event.source.chat_id
@@ -11235,14 +11240,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if not should:
             return False
 
-        # Dedup: agent already called TTS tool
+        # Dedup: agent already called TTS tool (only check current turn)
+        current_turn_messages = (
+            agent_messages[history_offset:]
+            if history_offset and len(agent_messages) >= history_offset
+            else agent_messages
+        )
         has_agent_tts = any(
             msg.get("role") == "assistant"
             and any(
                 tc.get("function", {}).get("name") == "text_to_speech"
                 for tc in (msg.get("tool_calls") or [])
             )
-            for msg in agent_messages
+            for msg in current_turn_messages
         )
         if has_agent_tts:
             return False
