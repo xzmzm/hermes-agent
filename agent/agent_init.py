@@ -59,6 +59,25 @@ from utils import base_url_host_matches, is_truthy_value
 logger = logging.getLogger("run_agent")
 
 
+def _get_hermes_default_headers() -> Dict[str, str]:
+    """Read HERMES_DEFAULT_HEADERS env var (JSON dict), fallback RooCode UA."""
+    _raw = os.environ.get("HERMES_DEFAULT_HEADERS", "").strip()
+    if _raw:
+        try:
+            import json
+            parsed = json.loads(_raw)
+            if isinstance(parsed, dict):
+                return {str(k): str(v) for k, v in parsed.items()}
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # RooCode UA fallback
+    return {
+        "http-referer": "https://github.com/RooVetGit/Roo-Cline",
+        "User-Agent": "RooCode/3.53.0",
+        "x-title": "Roo Code",
+    }
+
+
 def _ra():
     """Lazy reference to ``run_agent`` so callers can patch
     ``run_agent.OpenAI`` / ``run_agent.cleanup_vm`` / ... and have those
@@ -803,6 +822,11 @@ def init_agent(
                         client_kwargs["default_headers"] = dict(_ph.default_headers)
                 except Exception:
                     pass
+                # Patch #2: HERMES_DEFAULT_HEADERS env fallback (after
+                # profile-level default_headers).  Reads JSON dict, falls
+                # back to RooCode UA headers if unset.
+                if "default_headers" not in client_kwargs:
+                    client_kwargs["default_headers"] = _get_hermes_default_headers()
         else:
             # No explicit creds — use the centralized provider router
             from agent.auxiliary_client import resolve_provider_client
