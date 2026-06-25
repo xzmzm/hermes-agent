@@ -512,7 +512,7 @@ _AUTH_JSON_PATH = get_hermes_home() / "auth.json"
 # → gpt-5.4 over 6 weeks in early 2026).  Callers must pass the model
 # they want explicitly (from config.yaml model.model, auxiliary.<task>.model,
 # or the user's active Codex model selection).
-_CODEX_AUX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+_CODEX_AUX_BASE_URL = os.getenv("HERMES_CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex").strip().rstrip("/")
 
 
 def _codex_cloudflare_headers(access_token: str) -> Dict[str, str]:
@@ -1999,7 +1999,7 @@ def _build_xai_oauth_aux_client(model: str) -> Tuple[Optional[Any], Optional[str
     return CodexAuxiliaryClient(real_client, model), model
 
 
-def _build_codex_client(model: str) -> Tuple[Optional[Any], Optional[str]]:
+def _build_codex_client(model: str, *, base_url_override: Optional[str] = None) -> Tuple[Optional[Any], Optional[str]]:
     """Build a CodexAuxiliaryClient for an explicitly-requested model.
 
     There is no auto-selection of the Codex model: the ChatGPT-account
@@ -2017,10 +2017,19 @@ def _build_codex_client(model: str) -> Tuple[Optional[Any], Optional[str]]:
         )
         return None, None
     pool_present, entry = _select_pool_entry("openai-codex")
+    _env_override = (
+        "HERMES_CODEX_BASE_URL" in os.environ
+        and os.environ["HERMES_CODEX_BASE_URL"].strip()
+    )
     if pool_present:
         codex_token = _pool_runtime_api_key(entry)
         if codex_token:
-            base_url = _pool_runtime_base_url(entry, _CODEX_AUX_BASE_URL) or _CODEX_AUX_BASE_URL
+            base_url = (
+                base_url_override or _CODEX_AUX_BASE_URL
+                if base_url_override or _env_override
+                else _pool_runtime_base_url(entry, _CODEX_AUX_BASE_URL)
+                or _CODEX_AUX_BASE_URL
+            )
         else:
             codex_token = _read_codex_access_token()
             if not codex_token:
@@ -3553,7 +3562,11 @@ def resolve_provider_client(
             )
             return (raw_client, final_model)
         # Standard path: wrap in CodexAuxiliaryClient adapter
-        client, default = _build_codex_client(model)
+        _codex_base = (
+            _to_openai_base_url(explicit_base_url).strip()
+            if explicit_base_url else None
+        )
+        client, default = _build_codex_client(model, base_url_override=_codex_base)
         if client is None:
             logger.warning("resolve_provider_client: openai-codex requested "
                            "but no Codex OAuth token found (run: hermes model)")
@@ -4748,6 +4761,12 @@ def _resolve_task_provider_model(
         cfg_provider, cfg_base_url = _expand_direct_api_alias(cfg_provider, cfg_base_url)
 
     if base_url:
+        # Known built-in provider + explicit base_url → keep provider so
+        # provider-specific auth (e.g. Codex OAuth) is resolved correctly;
+        # the base_url still overrides the endpoint.  Only bare base_url
+        # without a named provider falls back to "custom".
+        if provider and provider not in {"", "auto", "custom"}:
+            return provider, resolved_model, base_url, api_key, resolved_api_mode
         return "custom", resolved_model, base_url, api_key, resolved_api_mode
     if provider:
         return provider, resolved_model, base_url, api_key, resolved_api_mode
