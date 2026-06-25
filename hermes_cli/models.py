@@ -4036,11 +4036,12 @@ def validate_requested_model(
                 }
 
         return {
-            "accepted": False,
-            "persist": False,
+            "accepted": True,
+            "persist": True,
             "recognized": False,
             "message": (
-                f"Model `{requested}` was not found in this provider's model listing."
+                f"Model `{requested}` was not found in this provider's model listing "
+                f"but accepted (model may exist in gated/premium plans)."
                 f"{suggestion_text}"
             ),
         }
